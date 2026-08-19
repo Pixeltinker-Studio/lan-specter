@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Sequence
+from dataclasses import fields, is_dataclass
+from enum import Enum
+from typing import Any
 
 from specter.core.diagnostics import ScanOptions, run_scan
 from specter.core.results import DiagnosticsResult, IperfResult, PingResult, Severity
@@ -22,7 +26,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             iperf_port=args.iperf_port,
         )
         result = run_scan(options)
-        print(format_scan(result))
+        if args.json:
+            print(format_json(result))
+        else:
+            print(format_scan(result))
         return 0 if result.severity in {Severity.PASS, Severity.WARN, Severity.UNKNOWN} else 2
 
     parser.print_help()
@@ -41,8 +48,30 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--no-iperf", action="store_true", help="skip iperf3 throughput test")
     scan.add_argument("--iperf-seconds", type=int, default=5, help="iperf3 test duration")
     scan.add_argument("--iperf-port", type=int, default=5201, help="iperf3 server port")
+    scan.add_argument("--json", action="store_true", help="print structured JSON output")
 
     return parser
+
+
+def format_json(result: DiagnosticsResult) -> str:
+    return json.dumps(to_jsonable(result), indent=2, sort_keys=True)
+
+
+def to_jsonable(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value) and not isinstance(value, type):
+        data = {field.name: to_jsonable(getattr(value, field.name)) for field in fields(value)}
+        if isinstance(value, DiagnosticsResult):
+            data["severity"] = value.severity.value
+        if isinstance(value, IperfResult):
+            data["mbps"] = value.mbps
+        return to_jsonable(data)
+    if isinstance(value, dict):
+        return {key: to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [to_jsonable(item) for item in value]
+    return value
 
 
 def format_scan(result: DiagnosticsResult) -> str:

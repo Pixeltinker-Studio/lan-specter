@@ -55,6 +55,12 @@ Run a scan:
 specter scan
 ```
 
+Print machine-readable scan results:
+
+```bash
+specter scan --json
+```
+
 Run tests:
 
 ```bash
