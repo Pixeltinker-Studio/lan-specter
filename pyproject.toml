@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lan-specter"
+version = "0.1.0"
+description = "Raspberry Pi LAN diagnostics tool for SPECTER ES-01 and RE-01."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "lan-specter" }]
+dependencies = []
+
+[project.scripts]
+specter = "specter.ui.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
