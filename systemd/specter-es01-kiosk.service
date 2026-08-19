@@ -1,0 +1,23 @@
+[Unit]
+Description=SPECTER ES-01 HDMI kiosk browser
+After=network-online.target specter-es01-web.service
+Wants=network-online.target specter-es01-web.service
+Conflicts=getty@tty1.service
+
+[Service]
+User=specter
+WorkingDirectory=/home/specter/lan-specter
+Environment=SPECTER_KIOSK_URL=http://127.0.0.1:8765
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+ExecStart=/usr/bin/xinit /bin/sh /home/specter/lan-specter/scripts/specter-kiosk-browser.sh -- /usr/bin/X :0 vt1 -nolisten tcp -nocursor
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

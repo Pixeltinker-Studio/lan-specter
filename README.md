@@ -123,7 +123,45 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now specter-es01-web.service
 ```
 
-On Raspberry Pi OS Lite, a browser/kiosk stack is still required to show this web UI directly on HDMI after boot.
+### Raspberry Pi OS Lite Kiosk
+
+Install a minimal X/Chromium kiosk stack on `specter-es01`:
+
+```bash
+sudo apt update
+sudo apt install --no-install-recommends xserver-xorg xinit x11-xserver-utils matchbox-window-manager chromium-browser curl
+```
+
+If `chromium-browser` is not available on your image:
+
+```bash
+sudo apt install --no-install-recommends chromium
+```
+
+Enable the SPECTER web server and HDMI kiosk:
+
+```bash
+cd ~/lan-specter
+sudo cp systemd/specter-es01-web.service /etc/systemd/system/
+sudo cp systemd/specter-es01-kiosk.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now specter-es01-web.service
+sudo systemctl enable --now specter-es01-kiosk.service
+```
+
+Check status:
+
+```bash
+systemctl status specter-es01-web.service
+systemctl status specter-es01-kiosk.service
+```
+
+Disable the kiosk again:
+
+```bash
+sudo systemctl disable --now specter-es01-kiosk.service
+sudo systemctl enable --now getty@tty1.service
+```
 
 Run tests:
 
