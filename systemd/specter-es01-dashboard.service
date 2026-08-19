@@ -1,0 +1,20 @@
+[Unit]
+Description=SPECTER ES-01 console dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=specter
+WorkingDirectory=/home/specter/lan-specter
+Environment=TERM=linux
+ExecStart=/home/specter/lan-specter/.venv/bin/specter watch
+Restart=always
+RestartSec=5
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+
+[Install]
+WantedBy=multi-user.target

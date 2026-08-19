@@ -55,10 +55,34 @@ Run a scan:
 specter scan
 ```
 
+Show a continuously updating HDMI/console dashboard:
+
+```bash
+specter watch
+```
+
 Print machine-readable scan results:
 
 ```bash
 specter scan --json
+```
+
+## HDMI Console Display
+
+An HDMI display does not need a special display driver for the MVP. Connect it to `specter-es01` and run the terminal dashboard:
+
+```bash
+cd ~/lan-specter
+source .venv/bin/activate
+specter watch
+```
+
+Optional autostart on `specter-es01`:
+
+```bash
+sudo cp systemd/specter-es01-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now specter-es01-dashboard.service
 ```
 
 Run tests:
