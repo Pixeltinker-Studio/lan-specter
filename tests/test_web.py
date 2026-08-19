@@ -36,6 +36,25 @@ class WebUiTests(unittest.TestCase):
 
         self.assertEqual(infer_ui_state(result, full_analysis=False), "no_link")
 
+    def test_infer_no_dhcp_state(self):
+        result = DiagnosticsResult(
+            interface="eth0",
+            link=LinkResult(interface="eth0", link_detected=True, speed_mbps=1000, duplex="full"),
+            ip_config=IpConfigResult(interface="eth0"),
+        )
+
+        self.assertEqual(infer_ui_state(result, full_analysis=False), "no_dhcp")
+
+    def test_infer_entity_not_found_state(self):
+        result = DiagnosticsResult(
+            interface="eth0",
+            link=LinkResult(interface="eth0", link_detected=True, speed_mbps=1000, duplex="full"),
+            ip_config=IpConfigResult(interface="eth0", addresses=(Address(family="inet", address="192.168.2.149/24"),)),
+            remote_ping=PingResult(target="specter-re01.local", reachable=False),
+        )
+
+        self.assertEqual(infer_ui_state(result, full_analysis=False), "entity_not_found")
+
 
 if __name__ == "__main__":
     unittest.main()

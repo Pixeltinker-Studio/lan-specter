@@ -11,6 +11,7 @@
   --cyan: #87c7c5;
   --red: #d86f61;
   --black: #030505;
+  --shadow: rgba(0, 0, 0, 0.42);
 }
 
 * {
@@ -27,10 +28,15 @@ body {
   color: var(--text);
   font-family: "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace;
   letter-spacing: 0;
+  cursor: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 button {
   font: inherit;
+  touch-action: manipulation;
 }
 
 .instrument {
@@ -114,7 +120,7 @@ button {
 }
 
 .statusbar div {
-  min-width: 210px;
+  min-width: 168px;
 }
 
 .statusbar strong {
@@ -125,13 +131,14 @@ button {
 }
 
 .softkey {
-  min-width: 142px;
+  min-width: 152px;
   min-height: 52px;
   margin-left: auto;
   border: 2px solid var(--green);
   border-radius: 4px;
   background: rgba(156, 213, 139, 0.12);
   color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(232, 234, 216, 0.08), 0 8px 18px var(--shadow);
 }
 
 .softkey + .softkey {
@@ -172,7 +179,8 @@ button {
 .boot-mark {
   border: 2px solid var(--line);
   padding: 34px;
-  background: rgba(17, 23, 24, 0.72);
+  background: linear-gradient(145deg, rgba(20, 26, 27, 0.96), rgba(8, 10, 10, 0.72));
+  box-shadow: inset 0 0 0 1px rgba(232, 234, 216, 0.08);
 }
 
 .boot-mark h1 {
@@ -192,6 +200,12 @@ button {
 .boot-list {
   display: grid;
   gap: 12px;
+}
+
+.typeplate {
+  color: var(--amber);
+  font-size: 13px;
+  margin-bottom: 14px;
 }
 
 .boot-row,
@@ -214,14 +228,16 @@ button {
   display: grid;
   grid-template-columns: 1.15fr 0.85fr;
   gap: 24px;
+  height: 100%;
 }
 
 .panel {
   min-height: 100%;
   border: 2px solid var(--line);
   border-radius: 4px;
-  background: rgba(17, 23, 24, 0.82);
+  background: linear-gradient(180deg, rgba(20, 26, 27, 0.92), rgba(10, 13, 14, 0.82));
   padding: 22px;
+  box-shadow: inset 0 0 0 1px rgba(232, 234, 216, 0.06), 0 14px 24px var(--shadow);
 }
 
 .metrics {
@@ -257,6 +273,26 @@ button {
   padding-top: 20px;
 }
 
+.readout {
+  margin-top: 24px;
+  border: 1px solid var(--line-soft);
+  padding: 16px;
+  background: rgba(3, 5, 5, 0.34);
+}
+
+.readout span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.readout strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--cyan);
+  font-size: 22px;
+}
+
 .condition strong {
   display: block;
   color: var(--green);
@@ -275,22 +311,28 @@ button {
 .actions {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 14px;
-  margin-top: 26px;
+  gap: 16px;
+  margin-top: 24px;
 }
 
 .action {
-  min-height: 76px;
+  min-height: 88px;
   border: 2px solid var(--green);
   border-radius: 4px;
   background: rgba(156, 213, 139, 0.1);
   color: var(--text);
   font-size: 22px;
+  box-shadow: inset 0 0 0 1px rgba(232, 234, 216, 0.08), 0 8px 18px var(--shadow);
 }
 
 .action.secondary {
   border-color: var(--amber);
   background: rgba(215, 179, 95, 0.08);
+}
+
+.action:active,
+.softkey:active {
+  background: rgba(156, 213, 139, 0.22);
 }
 
 .idle {
@@ -354,21 +396,49 @@ button {
 .progress span {
   display: block;
   height: 100%;
-  width: 100%;
+  width: 8%;
   background: repeating-linear-gradient(90deg, var(--green), var(--green) 18px, rgba(156, 213, 139, 0.35) 18px, rgba(156, 213, 139, 0.35) 28px);
-  animation: progress 5.4s ease-in-out infinite;
+  transition: width 420ms ease;
 }
 
-@keyframes progress {
-  0% { transform: translateX(-82%); }
-  70% { transform: translateX(-8%); }
-  100% { transform: translateX(0); }
+.step-row.complete span:last-child {
+  color: var(--green);
 }
 
 .error-code {
   margin-top: 28px;
   color: var(--red);
   font-size: 22px;
+}
+
+.fault-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 24px;
+  height: 100%;
+}
+
+.fault-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 2px solid var(--red);
+  border-radius: 4px;
+  padding: 42px;
+  background: rgba(30, 15, 13, 0.42);
+}
+
+.fault-panel h1 {
+  margin: 0;
+  color: var(--red);
+  font-size: 42px;
+}
+
+.fault-panel p {
+  max-width: 680px;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.45;
 }
 
 @media (max-width: 820px) {
@@ -381,7 +451,8 @@ button {
   }
 
   .grid,
-  .boot {
+  .boot,
+  .fault-layout {
     grid-template-columns: 1fr;
   }
 

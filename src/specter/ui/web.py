@@ -236,7 +236,7 @@ def build_scan_payload(
 def infer_ui_state(result: DiagnosticsResult, *, full_analysis: bool) -> str:
     if result.interface is None:
         return "system_error"
-    if result.link and result.link.link_detected is False:
+    if result.link is None or result.link.link_detected is False:
         return "no_link"
     if result.ip_config and result.ip_config.primary_ipv4 is None:
         return "no_dhcp"

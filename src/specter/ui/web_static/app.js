@@ -1,12 +1,15 @@
 const screen = document.querySelector("#screen");
 const fieldStatus = document.querySelector("#field-status");
 const entityStatus = document.querySelector("#entity-status");
+const modeStatus = document.querySelector("#mode-status");
 const scanButton = document.querySelector("#scan-button");
 const menuButton = document.querySelector("#menu-button");
 const clock = document.querySelector("#clock");
 
 let latestPayload = null;
 let analysisRunning = false;
+let activeView = "boot";
+let analysisProgressTimer = null;
 
 function setClock() {
   const now = new Date();
@@ -89,12 +92,15 @@ function updateFooter() {
   const entity = ping("remote_ping")?.reachable ? "RE-01" : "UNRESOLVED";
   fieldStatus.textContent = field;
   entityStatus.textContent = entity;
+  modeStatus.textContent = activeView === "analysis" ? "ANALYSIS" : activeView === "result" ? "RESULT" : "READY";
 }
 
 function bootScreen() {
+  activeView = "boot";
   screen.innerHTML = `
     <div class="boot">
       <section class="boot-mark">
+        <div class="typeplate">MODEL ES-01 / FIELD UNIT</div>
         <h1>SPECTER</h1>
         <p>ES-01<br>PORTABLE ETHERNETIC<br>SPECTROMETER</p>
       </section>
@@ -112,6 +118,7 @@ function bootScreen() {
 }
 
 function idleScreen() {
+  activeView = "idle";
   screen.innerHTML = `
     <div class="idle">
       <section>
@@ -123,7 +130,29 @@ function idleScreen() {
   `;
 }
 
+function faultScreen(title, message, reference, action = "RETRY") {
+  activeView = "fault";
+  screen.innerHTML = `
+    <div class="fault-layout">
+      <section class="fault-panel">
+        <p class="typeplate">ANOMALY REGISTER</p>
+        <h1>${title}</h1>
+        <p>${message}</p>
+        <div class="error-code">REFERENCE ${reference}</div>
+      </section>
+      <aside class="panel">
+        <p class="label">CORRECTIVE ACTION</p>
+        <div class="actions">
+          <button class="action" type="button" data-action="refresh">${action}</button>
+          <button class="action secondary" type="button" data-action="analysis">FORCE ANALYSIS</button>
+        </div>
+      </aside>
+    </div>
+  `;
+}
+
 function readyScreen() {
+  activeView = "ready";
   const stateClass = severity() === "warn" ? "anomaly" : severity() === "fail" ? "critical" : "";
   screen.innerHTML = `
     <div class="grid">
@@ -143,6 +172,10 @@ function readyScreen() {
           <span class="label">GLOBAL STATUS</span>
           <strong>${conditionText()}</strong>
         </div>
+        <div class="readout">
+          <span>CH-A / ETH0</span>
+          <strong>${link().speed_mbps ? `${link().speed_mbps} Mbps` : "NO CARRIER"}</strong>
+        </div>
         <div class="actions">
           <button class="action" type="button" data-action="analysis">INITIATE ANALYSIS</button>
           <button class="action secondary" type="button" data-action="entity">ENTITY SCAN</button>
@@ -153,27 +186,30 @@ function readyScreen() {
 }
 
 function analysisScreen() {
+  activeView = "analysis";
   screen.innerHTML = `
     <div class="grid">
       <section class="panel">
         <h2 class="screen-title">ETHERNETIC ANALYSIS</h2>
-        <div class="step-row"><span>LINK INTEGRITY</span><span>COMPLETE</span></div>
-        <div class="step-row"><span>GATEWAY RESPONSE</span><span>COMPLETE</span></div>
-        <div class="step-row"><span>ENTITY ECHO</span><span>COMPLETE</span></div>
-        <div class="step-row"><span>PACKET INTEGRITY</span><span>COMPLETE</span></div>
-        <div class="step-row"><span>FIELD CAPACITY</span><span>RUNNING</span></div>
-        <div class="progress"><span></span></div>
+        <div class="step-row" data-step="0"><span>LINK INTEGRITY</span><span>QUEUED</span></div>
+        <div class="step-row" data-step="1"><span>GATEWAY RESPONSE</span><span>QUEUED</span></div>
+        <div class="step-row" data-step="2"><span>ENTITY ECHO</span><span>QUEUED</span></div>
+        <div class="step-row" data-step="3"><span>PACKET INTEGRITY</span><span>QUEUED</span></div>
+        <div class="step-row" data-step="4"><span>FIELD CAPACITY</span><span>RUNNING</span></div>
+        <div class="progress"><span id="analysis-progress"></span></div>
       </section>
       <aside class="panel">
         <p class="label">CURRENT CAPACITY</p>
-        <div class="hero-value">...</div>
+        <div class="hero-value" id="capacity-preview">...</div>
         <div class="hero-unit">Mbps</div>
       </aside>
     </div>
   `;
+  animateAnalysisProgress();
 }
 
 function resultScreen() {
+  activeView = "result";
   const capacity = formatCapacity();
   const capacityNumber = capacity.includes("Mbps") ? capacity.replace(" Mbps", "") : capacity;
   const stateClass = severity() === "warn" ? "anomaly" : severity() === "fail" ? "critical" : "";
@@ -203,6 +239,7 @@ function resultScreen() {
 }
 
 function errorScreen() {
+  activeView = "fault";
   screen.innerHTML = `
     <div class="idle">
       <section>
@@ -214,12 +251,38 @@ function errorScreen() {
   `;
 }
 
+function animateAnalysisProgress() {
+  clearInterval(analysisProgressTimer);
+  const rows = [...document.querySelectorAll(".step-row")];
+  const bar = document.querySelector("#analysis-progress");
+  const capacity = document.querySelector("#capacity-preview");
+  let tick = 0;
+  analysisProgressTimer = setInterval(() => {
+    tick += 1;
+    rows.forEach((row, index) => {
+      const status = row.querySelector("span:last-child");
+      if (tick > index + 1) {
+        status.textContent = "COMPLETE";
+        row.classList.add("complete");
+      } else if (tick === index + 1) {
+        status.textContent = "RUNNING";
+      }
+    });
+    if (bar) bar.style.width = `${Math.min(100, tick * 18)}%`;
+    if (capacity) capacity.textContent = tick < 5 ? String(580 + tick * 51) : "...";
+    if (tick >= 6) clearInterval(analysisProgressTimer);
+  }, 700);
+}
+
 function render() {
   if (!latestPayload) return;
-  updateFooter();
   const state = value(["ui", "state"], "system_error");
   if (state === "no_link") {
     idleScreen();
+  } else if (state === "no_dhcp") {
+    faultScreen("NO ADDRESS ACQUIRED", "DHCP RESPONSE ABSENT OR INCONCLUSIVE", "N-014");
+  } else if (state === "entity_not_found") {
+    faultScreen("REMOTE ENTITY NOT ACQUIRED", "VERIFY RE-01 POWER, LINK, AND LOCAL NETWORK PRESENCE", "R-027", "ENTITY SCAN");
   } else if (state === "system_error") {
     errorScreen();
   } else if (state === "result") {
@@ -227,6 +290,7 @@ function render() {
   } else {
     readyScreen();
   }
+  updateFooter();
 }
 
 async function fetchScan(full = false) {
@@ -253,6 +317,8 @@ screen.addEventListener("click", (event) => {
   if (!button) return;
   if (button.dataset.action === "analysis" || button.dataset.action === "entity") {
     runAnalysis();
+  } else if (button.dataset.action === "refresh") {
+    fetchScan(false);
   }
 });
 
@@ -264,5 +330,5 @@ setInterval(setClock, 1000);
 bootScreen();
 setTimeout(() => fetchScan(false), 2600);
 setInterval(() => {
-  if (!analysisRunning) fetchScan(false);
+  if (!analysisRunning && activeView !== "result") fetchScan(false);
 }, 30000);

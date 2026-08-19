@@ -44,6 +44,9 @@ exec "$CHROMIUM" \
   --disable-infobars \
   --disable-session-crashed-bubble \
   --disable-restore-session-state \
+  --touch-events=enabled \
+  --overscroll-history-navigation=0 \
+  --force-device-scale-factor=1 \
   --check-for-update-interval=31536000 \
   --disable-features=TranslateUI \
   --window-size=1024,600 \

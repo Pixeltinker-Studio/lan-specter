@@ -200,3 +200,11 @@ PYTHONPATH=src python -m unittest discover -s tests
 ## Notes
 
 The paranormal SPECTER terminology belongs in presentation layers. Network modules return technical facts and do not pretend to detect physical wiremap faults that two Raspberry Pis cannot prove.
+
+## Design
+
+The current visual direction is documented in:
+
+```text
+docs/design/specter-visual-design.md
+```
