@@ -5,11 +5,9 @@ import json
 import os
 import time
 from collections.abc import Sequence
-from dataclasses import fields, is_dataclass
-from enum import Enum
-from typing import Any
 
 from specter.core.diagnostics import ScanOptions, run_scan
+from specter.core.serialization import to_jsonable
 from specter.core.results import DiagnosticsResult, IperfResult, PingResult, Severity
 from specter.network.discovery import DEFAULT_REMOTE_HOSTNAME
 
@@ -45,6 +43,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return watch_scan(options, interval_seconds=args.interval)
 
+    if args.command == "ui":
+        from specter.ui.web import serve
+
+        return serve(host=args.host, port=args.port, demo=args.demo)
+
     parser.print_help()
     return 1
 
@@ -73,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--iperf-port", type=int, default=5201, help="iperf3 server port")
     watch.add_argument("--interval", type=int, default=30, help="seconds between scans")
 
+    ui = subparsers.add_parser("ui", help="run the local HDMI web UI")
+    ui.add_argument("--host", default="127.0.0.1", help="address to listen on")
+    ui.add_argument("--port", type=int, default=8765, help="port to listen on")
+    ui.add_argument("--demo", action="store_true", help="use simulated scan data")
+
     return parser
 
 
@@ -97,23 +105,6 @@ def clear_terminal() -> None:
 
 def format_json(result: DiagnosticsResult) -> str:
     return json.dumps(to_jsonable(result), indent=2, sort_keys=True)
-
-
-def to_jsonable(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    if is_dataclass(value) and not isinstance(value, type):
-        data = {field.name: to_jsonable(getattr(value, field.name)) for field in fields(value)}
-        if isinstance(value, DiagnosticsResult):
-            data["severity"] = value.severity.value
-        if isinstance(value, IperfResult):
-            data["mbps"] = value.mbps
-        return to_jsonable(data)
-    if isinstance(value, dict):
-        return {key: to_jsonable(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [to_jsonable(item) for item in value]
-    return value
 
 
 def format_dashboard(result: DiagnosticsResult) -> str:

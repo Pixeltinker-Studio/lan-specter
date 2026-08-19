@@ -1,0 +1,395 @@
+:root {
+  --bg: #080b0c;
+  --panel: #111718;
+  --panel-2: #151b1d;
+  --line: #46514d;
+  --line-soft: #27302e;
+  --text: #e8ead8;
+  --muted: #8f9a8f;
+  --green: #9cd58b;
+  --amber: #d7b35f;
+  --cyan: #87c7c5;
+  --red: #d86f61;
+  --black: #030505;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--black);
+  color: var(--text);
+  font-family: "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace;
+  letter-spacing: 0;
+}
+
+button {
+  font: inherit;
+}
+
+.instrument {
+  width: 100vw;
+  height: 100vh;
+  min-width: 800px;
+  min-height: 480px;
+  display: grid;
+  grid-template-rows: 58px 1fr 72px;
+  background:
+    linear-gradient(rgba(156, 213, 139, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(156, 213, 139, 0.03) 1px, transparent 1px),
+    var(--bg);
+  background-size: 32px 32px, 32px 32px, auto;
+}
+
+.topbar,
+.statusbar {
+  display: flex;
+  align-items: center;
+  border-color: var(--line);
+  background: rgba(12, 16, 17, 0.96);
+}
+
+.topbar {
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 2px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+}
+
+.brand strong {
+  font-size: 24px;
+  color: var(--green);
+}
+
+.brand span,
+.clock,
+.statusbar span,
+.label,
+.code {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.clock {
+  min-width: 72px;
+  text-align: right;
+  color: var(--cyan);
+}
+
+.viewport {
+  position: relative;
+  overflow: hidden;
+  padding: 28px 32px;
+}
+
+.viewport::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0, rgba(232, 234, 216, 0.025) 50%, transparent 100%);
+  animation: sweep 4.8s linear infinite;
+}
+
+@keyframes sweep {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.statusbar {
+  gap: 18px;
+  padding: 10px 20px;
+  border-top: 2px solid var(--line);
+}
+
+.statusbar div {
+  min-width: 210px;
+}
+
+.statusbar strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--green);
+  font-size: 18px;
+}
+
+.softkey {
+  min-width: 142px;
+  min-height: 52px;
+  margin-left: auto;
+  border: 2px solid var(--green);
+  border-radius: 4px;
+  background: rgba(156, 213, 139, 0.12);
+  color: var(--text);
+}
+
+.softkey + .softkey {
+  margin-left: 0;
+}
+
+.softkey.secondary {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.softkey:active {
+  transform: translateY(1px);
+}
+
+.screen-title {
+  color: var(--green);
+  font-size: 30px;
+  margin: 0 0 18px;
+  font-weight: 700;
+}
+
+.screen-subtitle {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.boot {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 44px;
+  height: 100%;
+  align-items: center;
+}
+
+.boot-mark {
+  border: 2px solid var(--line);
+  padding: 34px;
+  background: rgba(17, 23, 24, 0.72);
+}
+
+.boot-mark h1 {
+  margin: 0;
+  color: var(--green);
+  font-size: 58px;
+  line-height: 0.95;
+}
+
+.boot-mark p {
+  margin: 16px 0 0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.boot-list {
+  display: grid;
+  gap: 12px;
+}
+
+.boot-row,
+.metric-row,
+.step-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.boot-row span:last-child,
+.step-row span:last-child {
+  color: var(--green);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 24px;
+}
+
+.panel {
+  min-height: 100%;
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  background: rgba(17, 23, 24, 0.82);
+  padding: 22px;
+}
+
+.metrics {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-row {
+  min-height: 58px;
+}
+
+.metric-row strong {
+  color: var(--text);
+  font-size: 22px;
+  text-align: right;
+}
+
+.hero-value {
+  margin-top: 10px;
+  color: var(--green);
+  font-size: 96px;
+  line-height: 0.9;
+}
+
+.hero-unit {
+  color: var(--muted);
+  font-size: 24px;
+}
+
+.condition {
+  margin-top: 34px;
+  border-top: 2px solid var(--line);
+  padding-top: 20px;
+}
+
+.condition strong {
+  display: block;
+  color: var(--green);
+  font-size: 38px;
+  margin-top: 8px;
+}
+
+.condition.anomaly strong {
+  color: var(--amber);
+}
+
+.condition.critical strong {
+  color: var(--red);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-top: 26px;
+}
+
+.action {
+  min-height: 76px;
+  border: 2px solid var(--green);
+  border-radius: 4px;
+  background: rgba(156, 213, 139, 0.1);
+  color: var(--text);
+  font-size: 22px;
+}
+
+.action.secondary {
+  border-color: var(--amber);
+  background: rgba(215, 179, 95, 0.08);
+}
+
+.idle {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  text-align: center;
+}
+
+.idle h1 {
+  margin: 0;
+  color: var(--amber);
+  font-size: 44px;
+}
+
+.idle p {
+  margin: 18px 0 0;
+  color: var(--text);
+  font-size: 24px;
+}
+
+.trace {
+  width: 560px;
+  height: 90px;
+  margin-top: 42px;
+  border: 2px solid var(--line);
+  position: relative;
+  overflow: hidden;
+}
+
+.trace::before {
+  content: "";
+  position: absolute;
+  inset: 42px 0 auto;
+  height: 2px;
+  background: var(--line);
+}
+
+.trace::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -20%;
+  width: 18%;
+  height: 100%;
+  background: rgba(215, 179, 95, 0.32);
+  animation: trace 3.8s linear infinite;
+}
+
+@keyframes trace {
+  to { left: 102%; }
+}
+
+.progress {
+  height: 24px;
+  border: 2px solid var(--line);
+  margin: 24px 0;
+  overflow: hidden;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: repeating-linear-gradient(90deg, var(--green), var(--green) 18px, rgba(156, 213, 139, 0.35) 18px, rgba(156, 213, 139, 0.35) 28px);
+  animation: progress 5.4s ease-in-out infinite;
+}
+
+@keyframes progress {
+  0% { transform: translateX(-82%); }
+  70% { transform: translateX(-8%); }
+  100% { transform: translateX(0); }
+}
+
+.error-code {
+  margin-top: 28px;
+  color: var(--red);
+  font-size: 22px;
+}
+
+@media (max-width: 820px) {
+  .instrument {
+    min-width: 0;
+  }
+
+  .brand span {
+    display: none;
+  }
+
+  .grid,
+  .boot {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-value {
+    font-size: 68px;
+  }
+
+  .statusbar div {
+    min-width: 140px;
+  }
+}

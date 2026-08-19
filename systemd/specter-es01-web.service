@@ -1,0 +1,14 @@
+[Unit]
+Description=SPECTER ES-01 local web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=specter
+WorkingDirectory=/home/specter/lan-specter
+ExecStart=/home/specter/lan-specter/.venv/bin/specter-ui --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

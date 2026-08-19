@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SPECTER ES-01</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="instrument" id="app">
+      <header class="topbar">
+        <div class="brand">
+          <strong>SPECTER // ES-01</strong>
+          <span>PORTABLE ETHERNETIC SPECTROMETER</span>
+        </div>
+        <div class="clock" id="clock">--:--</div>
+      </header>
+
+      <section class="viewport" id="screen"></section>
+
+      <footer class="statusbar">
+        <div><span>FIELD</span><strong id="field-status">UNKNOWN</strong></div>
+        <div><span>ENTITY</span><strong id="entity-status">UNRESOLVED</strong></div>
+        <button class="softkey" id="scan-button" type="button">SCAN</button>
+        <button class="softkey secondary" id="menu-button" type="button">MENU</button>
+      </footer>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

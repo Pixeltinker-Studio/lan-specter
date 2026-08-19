@@ -14,9 +14,13 @@ dependencies = []
 
 [project.scripts]
 specter = "specter.ui.cli:main"
+specter-ui = "specter.ui.web:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"specter.ui.web_static" = ["*.html", "*.css", "*.js"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

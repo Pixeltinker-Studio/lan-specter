@@ -67,6 +67,18 @@ Print machine-readable scan results:
 specter scan --json
 ```
 
+Run the local web UI:
+
+```bash
+specter-ui
+```
+
+Run the UI with simulated data:
+
+```bash
+specter-ui --demo
+```
+
 ## HDMI Console Display
 
 An HDMI display does not need a special display driver for the MVP. Connect it to `specter-es01` and run the terminal dashboard:
@@ -84,6 +96,34 @@ sudo cp systemd/specter-es01-dashboard.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now specter-es01-dashboard.service
 ```
+
+## HDMI Web UI Prototype
+
+The web UI prototype is designed for the Waveshare 7inch HDMI LCD at 1024x600 landscape. It uses the same diagnostic core as the CLI.
+
+Start it manually on `specter-es01`:
+
+```bash
+cd ~/lan-specter
+source .venv/bin/activate
+specter-ui
+```
+
+For UI development without live network tests:
+
+```bash
+specter-ui --demo
+```
+
+Optional server autostart:
+
+```bash
+sudo cp systemd/specter-es01-web.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now specter-es01-web.service
+```
+
+On Raspberry Pi OS Lite, a browser/kiosk stack is still required to show this web UI directly on HDMI after boot.
 
 Run tests:
 
