@@ -37,7 +37,7 @@ def run_scan(options: ScanOptions | None = None) -> DiagnosticsResult:
     throughput = None
     if not options.skip_iperf and remote_ping and remote_ping.reachable:
         throughput = run_iperf_client(
-            options.remote_host,
+            remote_ping.target,
             seconds=options.iperf_seconds,
             port=options.iperf_port,
         )

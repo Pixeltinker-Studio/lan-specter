@@ -15,17 +15,30 @@ This first milestone intentionally contains no display, GPIO, touch, PoE, or har
 
 ## Raspberry Pi Setup
 
-Install the expected system tools:
+Install the expected system tools on both Raspberry Pis:
 
 ```bash
 sudo apt update
-sudo apt install iperf3 ethtool lldpd python3-pip git
+sudo apt install iperf3 ethtool lldpd python3-pip python3-venv git avahi-daemon libnss-mdns
 ```
 
-On the remote unit, start an iperf3 server:
+Set the hostnames:
 
 ```bash
-iperf3 -s
+sudo hostnamectl hostname specter-es01
+sudo hostnamectl hostname specter-re01
+```
+
+Use `specter-es01` on the main unit and `specter-re01` on the remote unit. With Avahi/mDNS enabled, the remote should be reachable as:
+
+```bash
+specter-re01.local
+```
+
+On the remote unit, enable the iperf3 server:
+
+```bash
+sudo systemctl enable --now iperf3
 ```
 
 ## Development

@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 from specter.core.diagnostics import ScanOptions, run_scan
 from specter.core.results import DiagnosticsResult, IperfResult, PingResult, Severity
+from specter.network.discovery import DEFAULT_REMOTE_HOSTNAME
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -34,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = subparsers.add_parser("scan", help="run the MVP LAN diagnostic scan")
     scan.add_argument("-i", "--interface", help="network interface to test, for example eth0")
-    scan.add_argument("--remote", default="specter-re01", help="remote RE-01 hostname or address")
+    scan.add_argument("--remote", default=DEFAULT_REMOTE_HOSTNAME, help="remote RE-01 hostname or address")
     scan.add_argument("--internet-target", default="1.1.1.1", help="internet connectivity ping target")
     scan.add_argument("--no-internet", action="store_true", help="skip internet ping")
     scan.add_argument("--no-iperf", action="store_true", help="skip iperf3 throughput test")

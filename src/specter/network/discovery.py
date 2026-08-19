@@ -1,34 +1,28 @@
 from __future__ import annotations
 
-import socket
-
 from specter.core.results import PingResult
 from specter.network.ping import ping
 
 
-DEFAULT_REMOTE_HOSTNAME = "specter-re01"
+DEFAULT_REMOTE_HOSTNAME = "specter-re01.local"
 
 
-def resolve_remote(hostname: str = DEFAULT_REMOTE_HOSTNAME) -> str | None:
-    try:
-        return socket.gethostbyname(hostname)
-    except OSError:
-        return None
+def remote_candidates(hostname: str = DEFAULT_REMOTE_HOSTNAME) -> tuple[str, ...]:
+    candidates = [hostname]
+
+    if hostname.endswith(".local"):
+        candidates.append(hostname.removesuffix(".local"))
+    elif "." not in hostname:
+        candidates.append(f"{hostname}.local")
+
+    return tuple(dict.fromkeys(candidates))
 
 
 def detect_remote(hostname: str = DEFAULT_REMOTE_HOSTNAME, *, count: int = 2) -> PingResult:
-    target = resolve_remote(hostname) or hostname
-    result = ping(target, count=count)
-    if result.target == target and target != hostname:
-        return PingResult(
-            target=hostname,
-            reachable=result.reachable,
-            transmitted=result.transmitted,
-            received=result.received,
-            packet_loss_percent=result.packet_loss_percent,
-            min_latency_ms=result.min_latency_ms,
-            avg_latency_ms=result.avg_latency_ms,
-            max_latency_ms=result.max_latency_ms,
-            error=result.error,
-        )
-    return result
+    first_result: PingResult | None = None
+    for candidate in remote_candidates(hostname):
+        result = ping(candidate, count=count)
+        first_result = first_result or result
+        if result.reachable:
+            return result
+    return first_result or PingResult(target=hostname, reachable=False, error="No remote candidates found")
