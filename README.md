@@ -129,13 +129,27 @@ Install a minimal X/Chromium kiosk stack on `specter-es01`:
 
 ```bash
 sudo apt update
-sudo apt install --no-install-recommends xserver-xorg xinit x11-xserver-utils matchbox-window-manager chromium-browser curl
+sudo apt install --no-install-recommends xserver-xorg xinit x11-xserver-utils xserver-xorg-input-libinput matchbox-window-manager chromium-browser curl xinput libinput-tools evtest
 ```
 
 If `chromium-browser` is not available on your image:
 
 ```bash
 sudo apt install --no-install-recommends chromium
+```
+
+For Waveshare USB capacitive touch, connect both HDMI and USB. Check whether the touch controller is visible:
+
+```bash
+lsusb
+cat /proc/bus/input/devices
+sudo libinput list-devices
+```
+
+Inside the running kiosk X session, touch devices should also appear in:
+
+```bash
+DISPLAY=:0 xinput list
 ```
 
 On Raspberry Pi 5, Xorg may choose the non-display DRM device first. Install the SPECTER Xorg override:
