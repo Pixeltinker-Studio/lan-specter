@@ -9,6 +9,7 @@ const clock = document.querySelector("#clock");
 const params = new URLSearchParams(window.location.search);
 const BOOT_DELAY_MS = 2600;
 const SCREENSAVER_DELAY_MS = Number(params.get("screensaver")) || 120000;
+const ECHO_REFRESH_MS = Number(params.get("echo")) || 5000;
 
 let latestPayload = null;
 let analysisRunning = false;
@@ -16,6 +17,7 @@ let activeView = "boot";
 let analysisProgressTimer = null;
 let screensaverTimer = null;
 let screensaverActive = false;
+let echoSamples = [];
 
 function setClock() {
   const now = new Date();
@@ -73,6 +75,12 @@ function formatLatency(result) {
   return result.avg_latency_ms === null ? "unknown" : `${Number(result.avg_latency_ms).toFixed(2)} ms`;
 }
 
+function currentEchoMs() {
+  const result = ping("remote_ping");
+  if (!result || !result.reachable || result.avg_latency_ms === null) return null;
+  return Number(result.avg_latency_ms);
+}
+
 function formatLoss(result) {
   if (!result) return "unknown";
   return result.packet_loss_percent === null ? "unknown" : `${Number(result.packet_loss_percent).toFixed(2)} %`;
@@ -107,6 +115,7 @@ function updateFooter() {
     activeView === "analysis" ? "ANALYSIS" :
     activeView === "result" ? "RESULT" :
     activeView === "menu" ? "MENU" :
+    activeView === "info" ? "INFO" :
     activeView === "boot" ? "BOOT" :
     activeView === "screensaver" ? "STANDBY" :
     "READY";
@@ -208,6 +217,13 @@ function readyScreen() {
           <span>TYPEPLATE</span>
           <strong>ES-01 / ETH0</strong>
         </div>
+        <div class="echo-panel">
+          <div class="echo-panel-header">
+            <span class="label">ECHO RESPONSE TRACE</span>
+            <strong>${formatLatency(ping("remote_ping"))}</strong>
+          </div>
+          ${echoCurveSvg()}
+        </div>
         <button class="action action-primary" type="button" data-action="analysis">INITIATE ANALYSIS</button>
       </aside>
     </div>
@@ -234,10 +250,10 @@ function menuScreen() {
             <strong>ENTITY SCAN</strong>
             <em>Acquire RE-01 presence</em>
           </button>
-          <button class="menu-tile" type="button" data-action="analysis">
+          <button class="menu-tile" type="button" data-action="info">
             <span>03</span>
-            <strong>RESONANCE TEST</strong>
-            <em>Field capacity / iperf3</em>
+            <strong>UNIT PLATE</strong>
+            <em>Boot and identity register</em>
           </button>
           <button class="menu-tile" type="button" data-action="diagnostics">
             <span>04</span>
@@ -254,6 +270,29 @@ function menuScreen() {
         </div>
         <button class="action secondary" type="button" data-action="refresh">RETURN</button>
       </aside>
+    </div>
+  `;
+}
+
+function infoScreen() {
+  setActiveView("info");
+  screen.innerHTML = `
+    <div class="boot info-plate">
+      <section class="boot-mark">
+        <div class="typeplate">SPECTRAL PACKET & ETHERNETIC COMMUNICATION TEST AND EVALUATION RIG</div>
+        <h1><span>◈</span>SPECTER</h1>
+        <p>ES-01<br>PORTABLE ETHERNETIC<br>SPECTROMETER</p>
+        <div class="plate-grid">
+          <span>MODEL ES-01</span>
+          <span>REMOTE ENTITY CLASS RE-01</span>
+          <span>CAL REF 01 / CH-A / ETH0</span>
+        </div>
+      </section>
+      <section class="boot-list">
+        <h2 class="screen-title">UNIT PLATE</h2>
+        ${subsystemRows()}
+        <button class="action secondary" type="button" data-action="menu">RETURN TO MENU</button>
+      </section>
     </div>
   `;
 }
@@ -322,7 +361,7 @@ function analysisScreen() {
       </section>
       <aside class="panel">
         <p class="label">CURRENT CAPACITY</p>
-        <div class="hero-value" id="capacity-preview">...</div>
+        <div class="hero-value" id="capacity-preview">000</div>
         <div class="hero-unit">Mbps</div>
       </aside>
     </div>
@@ -384,6 +423,11 @@ function screensaverScreen() {
   setActiveView("screensaver");
   screen.innerHTML = `
     <div class="screensaver">
+      <div class="standby-reticle" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
       <div class="screensaver-mark">
         <span>◈</span>
         <strong>SPECTER ES-01</strong>
@@ -400,6 +444,7 @@ function animateAnalysisProgress() {
   const bar = document.querySelector("#analysis-progress");
   const capacity = document.querySelector("#capacity-preview");
   let tick = 0;
+  let lastCapacity = 0;
   analysisProgressTimer = setInterval(() => {
     tick += 1;
     rows.forEach((row, index) => {
@@ -412,9 +457,40 @@ function animateAnalysisProgress() {
       }
     });
     if (bar) bar.style.width = `${Math.min(100, tick * 18)}%`;
-    if (capacity) capacity.textContent = tick < 5 ? String(580 + tick * 51) : "...";
+    if (capacity && tick <= 5) {
+      lastCapacity = 580 + tick * 51;
+      capacity.textContent = String(lastCapacity);
+    } else if (capacity) {
+      capacity.textContent = String(lastCapacity);
+    }
     if (tick >= 6) clearInterval(analysisProgressTimer);
   }, 700);
+}
+
+function updateEchoSamples() {
+  const echo = currentEchoMs();
+  if (echo === null) return;
+  echoSamples.push(echo);
+  echoSamples = echoSamples.slice(-28);
+}
+
+function echoCurveSvg() {
+  updateEchoSamples();
+  const samples = echoSamples.length ? echoSamples : [0.4, 0.45, 0.42, 0.48, 0.41];
+  const max = Math.max(1, ...samples) + 0.5;
+  const width = 360;
+  const height = 88;
+  const points = samples.map((sample, index) => {
+    const x = samples.length === 1 ? 0 : (index / (samples.length - 1)) * width;
+    const y = height - Math.min(height - 6, (sample / max) * (height - 12)) - 3;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return `
+    <svg class="echo-curve" viewBox="0 0 ${width} ${height}" role="img" aria-label="Echo response history">
+      <line x1="0" y1="${height - 16}" x2="${width}" y2="${height - 16}"></line>
+      <polyline points="${points}"></polyline>
+    </svg>
+  `;
 }
 
 function render() {
@@ -440,6 +516,20 @@ async function fetchScan(full = false) {
   const response = await fetch(`/api/scan${full ? "?full=1" : ""}`, { cache: "no-store" });
   latestPayload = await response.json();
   render();
+}
+
+async function fetchEcho() {
+  if (!latestPayload || analysisRunning || screensaverActive || activeView !== "ready") return;
+  try {
+    const response = await fetch("/api/echo", { cache: "no-store" });
+    const payload = await response.json();
+    const remotePing = payload?.echo?.remote_ping;
+    if (!remotePing) return;
+    latestPayload.scan.remote_ping = remotePing;
+    render();
+  } catch {
+    // The full scan loop will surface persistent network errors.
+  }
 }
 
 async function runAnalysis() {
@@ -484,6 +574,8 @@ screen.addEventListener("click", (event) => {
     runAnalysis();
   } else if (button.dataset.action === "entity") {
     entityScanScreen();
+  } else if (button.dataset.action === "info") {
+    infoScreen();
   } else if (button.dataset.action === "refresh") {
     fetchScan(false);
   } else if (button.dataset.action === "menu") {
@@ -505,5 +597,6 @@ bootScreen();
 resetScreensaverTimer();
 setTimeout(() => fetchScan(false), BOOT_DELAY_MS);
 setInterval(() => {
-  if (!analysisRunning && activeView !== "result" && !screensaverActive) fetchScan(false);
+  if (!analysisRunning && activeView !== "result" && activeView !== "menu" && activeView !== "info" && !screensaverActive) fetchScan(false);
 }, 30000);
+setInterval(fetchEcho, ECHO_REFRESH_MS);

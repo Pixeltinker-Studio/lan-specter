@@ -7,13 +7,14 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
+from math import sin
 from time import monotonic
 from urllib.parse import parse_qs, urlparse
 
 from specter.core.diagnostics import ScanOptions, run_scan
 from specter.core.results import DiagnosticsResult
 from specter.core.serialization import to_jsonable
-from specter.network.discovery import DEFAULT_REMOTE_HOSTNAME
+from specter.network.discovery import DEFAULT_REMOTE_HOSTNAME, detect_remote
 
 
 STATIC_PACKAGE = "specter.ui.web_static"
@@ -40,6 +41,7 @@ class DemoState:
 
     def payload(self, *, full_analysis: bool) -> dict:
         elapsed = monotonic() - self.started_at
+        latency_ms = _demo_latency(elapsed)
         if elapsed < 5:
             state = "no_link"
             link_detected = False
@@ -89,13 +91,27 @@ class DemoState:
                     "primary_ipv4": "192.168.2.149/24" if link_detected else None,
                 },
                 "gateway_ping": _demo_ping("192.168.2.1", link_detected, 0.43),
-                "remote_ping": _demo_ping("specter-re01.local", remote_reachable, 0.41),
+                "remote_ping": _demo_ping("specter-re01.local", remote_reachable, latency_ms),
                 "internet_ping": _demo_ping("1.1.1.1", link_detected, 26.9),
                 "throughput": _demo_iperf("specter-re01.local", throughput_bps),
                 "errors": [],
                 "severity": severity,
             },
         }
+
+    def echo_payload(self) -> dict:
+        elapsed = monotonic() - self.started_at
+        reachable = elapsed >= 10
+        return {
+            "mode": "demo",
+            "echo": {
+                "remote_ping": _demo_ping("specter-re01.local", reachable, _demo_latency(elapsed)),
+            },
+        }
+
+
+def _demo_latency(elapsed: float) -> float:
+    return round(0.48 + sin(elapsed * 1.7) * 0.08 + sin(elapsed * 0.43) * 0.05, 3)
 
 
 def _demo_ping(target: str, reachable: bool, latency_ms: float) -> dict:
@@ -166,6 +182,9 @@ def build_handler(*, options: WebUiOptions, demo: bool, demo_state: DemoState) -
                 full_analysis = query.get("full", ["0"])[0] == "1"
                 self._send_json(build_scan_payload(options=options, demo=demo, demo_state=demo_state, full_analysis=full_analysis))
                 return
+            if parsed.path == "/api/echo":
+                self._send_json(build_echo_payload(options=options, demo=demo, demo_state=demo_state))
+                return
             if parsed.path.startswith("/static/"):
                 self._serve_static(parsed.path.removeprefix("/static/"))
                 return
@@ -230,6 +249,24 @@ def build_scan_payload(
             "state": infer_ui_state(result, full_analysis=full_analysis),
         },
         "scan": to_jsonable(result),
+    }
+
+
+def build_echo_payload(
+    *,
+    options: WebUiOptions,
+    demo: bool,
+    demo_state: DemoState | None = None,
+) -> dict:
+    if demo:
+        state = demo_state or DemoState()
+        return state.echo_payload()
+
+    return {
+        "mode": "live",
+        "echo": {
+            "remote_ping": to_jsonable(detect_remote(options.remote_host, count=1)),
+        },
     }
 
 

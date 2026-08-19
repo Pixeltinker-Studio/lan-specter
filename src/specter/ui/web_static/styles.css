@@ -303,7 +303,31 @@ button {
 
 .control-panel {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto minmax(88px, 1fr) auto;
+  gap: 10px;
+  padding: 18px;
+}
+
+.control-panel .condition,
+.control-panel .readout {
+  margin-top: 0;
+}
+
+.control-panel .condition {
+  padding-top: 14px;
+}
+
+.control-panel .condition strong {
+  font-size: 30px;
+}
+
+.control-panel .readout {
+  padding: 12px;
+}
+
+.control-panel .readout strong {
+  margin-top: 6px;
+  font-size: 18px;
 }
 
 .metrics {
@@ -407,8 +431,8 @@ button {
 
 .action-primary {
   align-self: end;
-  min-height: 128px;
-  font-size: 24px;
+  min-height: 78px;
+  font-size: 22px;
 }
 
 .action.secondary {
@@ -592,14 +616,73 @@ button {
   background: rgba(156, 213, 139, 0.12);
 }
 
+.echo-panel {
+  min-height: 88px;
+  border: 1px solid var(--line-soft);
+  padding: 8px 10px;
+  background: rgba(3, 5, 5, 0.34);
+  overflow: hidden;
+}
+
+.echo-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.echo-panel-header strong {
+  color: var(--cyan);
+  font-size: 17px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.echo-curve {
+  width: 100%;
+  height: 62px;
+  display: block;
+  margin-top: 4px;
+}
+
+.echo-curve line {
+  stroke: rgba(143, 154, 143, 0.4);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.echo-curve polyline {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 3;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 5px rgba(156, 213, 139, 0.35));
+}
+
 .screensaver {
   width: 100%;
   height: 100%;
   position: relative;
   background:
-    radial-gradient(circle at 30% 30%, rgba(156, 213, 139, 0.05), transparent 24%),
+    linear-gradient(rgba(156, 213, 139, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(156, 213, 139, 0.035) 1px, transparent 1px),
     var(--black);
+  background-size: 46px 46px, 46px 46px, auto;
   overflow: hidden;
+}
+
+.screensaver::before {
+  content: "";
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: 18%;
+  height: 2px;
+  background: rgba(135, 199, 197, 0.26);
+  box-shadow: 0 80px 0 rgba(156, 213, 139, 0.12), 0 210px 0 rgba(215, 179, 95, 0.12);
+  animation: standby-scan 18s linear infinite alternate;
 }
 
 .entity-scan {
@@ -670,6 +753,41 @@ button {
   animation: saver-drift 34s linear infinite alternate;
 }
 
+.standby-reticle {
+  position: absolute;
+  width: 330px;
+  height: 330px;
+  border: 1px solid rgba(156, 213, 139, 0.34);
+  animation: reticle-drift 46s linear infinite alternate;
+}
+
+.standby-reticle::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 49.7%, rgba(215, 179, 95, 0.28) 49.7%, rgba(215, 179, 95, 0.28) 50.3%, transparent 50.3%),
+    linear-gradient(0deg, transparent 49.7%, rgba(215, 179, 95, 0.28) 49.7%, rgba(215, 179, 95, 0.28) 50.3%, transparent 50.3%);
+}
+
+.standby-reticle span {
+  position: absolute;
+  border: 1px solid rgba(156, 213, 139, 0.26);
+}
+
+.standby-reticle span:nth-child(1) {
+  inset: 38px;
+}
+
+.standby-reticle span:nth-child(2) {
+  inset: 92px;
+}
+
+.standby-reticle span:nth-child(3) {
+  inset: 152px;
+  border-color: rgba(215, 179, 95, 0.32);
+}
+
 .screensaver-mark span {
   color: rgba(215, 179, 95, 0.68);
   font-size: 28px;
@@ -695,6 +813,17 @@ button {
   animation: saver-trace 16s linear infinite alternate;
 }
 
+.screensaver-trace::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -3px;
+  width: 90px;
+  height: 8px;
+  background: rgba(156, 213, 139, 0.48);
+  animation: trace-carriage 9s linear infinite alternate;
+}
+
 @keyframes saver-drift {
   0% { transform: translate(44px, 38px); }
   25% { transform: translate(590px, 82px); }
@@ -706,6 +835,24 @@ button {
 @keyframes saver-trace {
   0% { transform: translateY(-90px) scaleX(0.52); opacity: 0.22; }
   100% { transform: translateY(42px) scaleX(0.84); opacity: 0.44; }
+}
+
+@keyframes standby-scan {
+  0% { transform: translateY(0) rotate(-1deg); opacity: 0.24; }
+  100% { transform: translateY(280px) rotate(1deg); opacity: 0.46; }
+}
+
+@keyframes reticle-drift {
+  0% { transform: translate(76px, 54px) rotate(0deg); }
+  25% { transform: translate(610px, 92px) rotate(9deg); }
+  50% { transform: translate(520px, 232px) rotate(21deg); }
+  75% { transform: translate(168px, 214px) rotate(31deg); }
+  100% { transform: translate(640px, 54px) rotate(42deg); }
+}
+
+@keyframes trace-carriage {
+  0% { transform: translateX(0); opacity: 0.22; }
+  100% { transform: translateX(760px); opacity: 0.5; }
 }
 
 @media (max-width: 820px) {

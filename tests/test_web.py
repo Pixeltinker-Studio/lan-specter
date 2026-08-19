@@ -1,7 +1,7 @@
 import unittest
 
 from specter.core.results import Address, DiagnosticsResult, IpConfigResult, LinkResult, PingResult
-from specter.ui.web import DemoState, WebUiOptions, build_scan_payload, infer_ui_state
+from specter.ui.web import DemoState, WebUiOptions, build_echo_payload, build_scan_payload, infer_ui_state
 
 
 class WebUiTests(unittest.TestCase):
@@ -16,6 +16,17 @@ class WebUiTests(unittest.TestCase):
         self.assertTrue(payload["scan"]["link"]["link_detected"])
         self.assertEqual(payload["scan"]["link"]["speed_mbps"], 1000)
         self.assertEqual(payload["scan"]["throughput"]["mbps"], 936.0)
+
+    def test_demo_echo_payload_uses_structured_ping_data(self):
+        state = DemoState()
+        state.started_at -= 20
+
+        payload = build_echo_payload(options=WebUiOptions(), demo=True, demo_state=state)
+
+        self.assertEqual(payload["mode"], "demo")
+        self.assertIn("remote_ping", payload["echo"])
+        self.assertEqual(payload["echo"]["remote_ping"]["target"], "specter-re01.local")
+        self.assertIsInstance(payload["echo"]["remote_ping"]["avg_latency_ms"], float)
 
     def test_infer_ready_state_from_live_result(self):
         result = DiagnosticsResult(
