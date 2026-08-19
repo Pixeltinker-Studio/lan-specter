@@ -25,8 +25,8 @@ sudo apt install iperf3 ethtool lldpd python3-pip python3-venv git avahi-daemon 
 Set the hostnames:
 
 ```bash
-sudo hostnamectl hostname specter-es01
-sudo hostnamectl hostname specter-re01
+sudo hostnamectl set-hostname specter-es01
+sudo hostnamectl set-hostname specter-re01
 ```
 
 Use `specter-es01` on the main unit and `specter-re01` on the remote unit. With Avahi/mDNS enabled, the remote should be reachable as:
