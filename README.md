@@ -138,6 +138,13 @@ If `chromium-browser` is not available on your image:
 sudo apt install --no-install-recommends chromium
 ```
 
+On Raspberry Pi 5, Xorg may choose the non-display DRM device first. Install the SPECTER Xorg override:
+
+```bash
+sudo mkdir -p /etc/X11/xorg.conf.d
+sudo cp config/xorg.conf.d/99-specter-pi5-hdmi.conf /etc/X11/xorg.conf.d/
+```
+
 Enable the SPECTER web server and HDMI kiosk:
 
 ```bash
