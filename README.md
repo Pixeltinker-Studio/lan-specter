@@ -145,6 +145,7 @@ cd ~/lan-specter
 sudo cp systemd/specter-es01-web.service /etc/systemd/system/
 sudo cp systemd/specter-es01-kiosk.service /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl disable --now specter-es01-dashboard.service
 sudo systemctl enable --now specter-es01-web.service
 sudo systemctl enable --now specter-es01-kiosk.service
 ```

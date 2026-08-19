@@ -2,7 +2,7 @@
 Description=SPECTER ES-01 HDMI kiosk browser
 After=network-online.target specter-es01-web.service
 Wants=network-online.target specter-es01-web.service
-Conflicts=getty@tty1.service
+Conflicts=getty@tty1.service specter-es01-dashboard.service
 
 [Service]
 User=specter
