@@ -1,15 +1,21 @@
+const app = document.querySelector("#app");
 const screen = document.querySelector("#screen");
 const fieldStatus = document.querySelector("#field-status");
 const entityStatus = document.querySelector("#entity-status");
 const modeStatus = document.querySelector("#mode-status");
-const scanButton = document.querySelector("#scan-button");
 const menuButton = document.querySelector("#menu-button");
 const clock = document.querySelector("#clock");
+
+const params = new URLSearchParams(window.location.search);
+const BOOT_DELAY_MS = 2600;
+const SCREENSAVER_DELAY_MS = Number(params.get("screensaver")) || 120000;
 
 let latestPayload = null;
 let analysisRunning = false;
 let activeView = "boot";
 let analysisProgressTimer = null;
+let screensaverTimer = null;
+let screensaverActive = false;
 
 function setClock() {
   const now = new Date();
@@ -87,41 +93,65 @@ function conditionText() {
   return "UNKNOWN PHENOMENON";
 }
 
+function setActiveView(view) {
+  activeView = view;
+  updateFooter();
+}
+
 function updateFooter() {
   const field = link().link_detected ? "LOCKED" : "COLLAPSED";
   const entity = ping("remote_ping")?.reachable ? "RE-01" : "UNRESOLVED";
   fieldStatus.textContent = field;
   entityStatus.textContent = entity;
-  modeStatus.textContent = activeView === "analysis" ? "ANALYSIS" : activeView === "result" ? "RESULT" : "READY";
+  modeStatus.textContent =
+    activeView === "analysis" ? "ANALYSIS" :
+    activeView === "result" ? "RESULT" :
+    activeView === "menu" ? "MENU" :
+    activeView === "boot" ? "BOOT" :
+    activeView === "screensaver" ? "STANDBY" :
+    "READY";
+}
+
+function subsystemRows() {
+  return `
+    <div class="boot-row"><span>ETHERNETIC INTERFACE</span><span>READY</span></div>
+    <div class="boot-row"><span>DIAGNOSTIC CORE</span><span>READY</span></div>
+    <div class="boot-row"><span>SPECTRAL PROCESSOR</span><span>READY</span></div>
+    <div class="boot-row"><span>FIELD SENSOR ARRAY</span><span>READY</span></div>
+    <div class="boot-row"><span>LOCAL ENTITY</span><span>ES-01</span></div>
+  `;
 }
 
 function bootScreen() {
-  activeView = "boot";
+  app.classList.remove("screensaver-mode");
+  setActiveView("boot");
   screen.innerHTML = `
     <div class="boot">
       <section class="boot-mark">
-        <div class="typeplate">MODEL ES-01 / FIELD UNIT</div>
-        <h1>SPECTER</h1>
+        <div class="typeplate">SPECTRAL PACKET & ETHERNETIC COMMUNICATION TEST AND EVALUATION RIG</div>
+        <h1><span>◈</span>SPECTER</h1>
         <p>ES-01<br>PORTABLE ETHERNETIC<br>SPECTROMETER</p>
+        <div class="plate-grid">
+          <span>CAL REF 01</span>
+          <span>CH-A / ETH0</span>
+          <span>FIELD UNIT</span>
+        </div>
       </section>
       <section class="boot-list">
         <h2 class="screen-title">SYSTEM INITIALIZATION</h2>
-        <div class="boot-row"><span>ETHERNETIC INTERFACE</span><span>READY</span></div>
-        <div class="boot-row"><span>DIAGNOSTIC CORE</span><span>READY</span></div>
-        <div class="boot-row"><span>SPECTRAL PROCESSOR</span><span>READY</span></div>
-        <div class="boot-row"><span>FIELD SENSOR ARRAY</span><span>READY</span></div>
-        <div class="boot-row"><span>LOCAL ENTITY</span><span>ES-01</span></div>
-        <p class="screen-subtitle">CALIBRATING...</p>
+        ${subsystemRows()}
+        <p class="screen-subtitle">CALIBRATING FIELD INTERFACE...</p>
       </section>
     </div>
   `;
 }
 
 function idleScreen() {
-  activeView = "idle";
+  setActiveView("idle");
   screen.innerHTML = `
     <div class="idle">
       <section>
+        <div class="status-symbol amber">△</div>
         <h1>NO ETHERNETIC ACTIVITY</h1>
         <p>CONNECT TEST SUBJECT TO ETH0</p>
         <div class="trace" aria-hidden="true"></div>
@@ -131,7 +161,7 @@ function idleScreen() {
 }
 
 function faultScreen(title, message, reference, action = "RETRY") {
-  activeView = "fault";
+  setActiveView("fault");
   screen.innerHTML = `
     <div class="fault-layout">
       <section class="fault-panel">
@@ -140,11 +170,11 @@ function faultScreen(title, message, reference, action = "RETRY") {
         <p>${message}</p>
         <div class="error-code">REFERENCE ${reference}</div>
       </section>
-      <aside class="panel">
+      <aside class="panel panel-compact">
         <p class="label">CORRECTIVE ACTION</p>
         <div class="actions">
           <button class="action" type="button" data-action="refresh">${action}</button>
-          <button class="action secondary" type="button" data-action="analysis">FORCE ANALYSIS</button>
+          <button class="action secondary" type="button" data-action="menu">OPEN MENU</button>
         </div>
       </aside>
     </div>
@@ -152,45 +182,137 @@ function faultScreen(title, message, reference, action = "RETRY") {
 }
 
 function readyScreen() {
-  activeView = "ready";
+  setActiveView("ready");
   const stateClass = severity() === "warn" ? "anomaly" : severity() === "fail" ? "critical" : "";
   screen.innerHTML = `
-    <div class="grid">
+    <div class="ready-layout">
       <section class="panel">
-        <h2 class="screen-title">ETHERNETIC FIELD STATUS</h2>
+        <div class="panel-heading">
+          <span class="section-code">FIELD ANALYSIS SECTION / CH-A</span>
+          <h2 class="screen-title">ETHERNETIC FIELD STATUS</h2>
+        </div>
         <div class="metrics">
-          <div class="metric-row"><span class="label">LINK RESONANCE</span><strong>${formatResonance()}</strong></div>
-          <div class="metric-row"><span class="label">LOCAL ENTITY</span><strong>${formatAddress()}</strong></div>
-          <div class="metric-row"><span class="label">GATEWAY</span><strong>${formatLatency(ping("gateway_ping"))}</strong></div>
-          <div class="metric-row"><span class="label">REMOTE ENTITY</span><strong>${ping("remote_ping")?.reachable ? "SPECTER RE-01" : "NOT ACQUIRED"}</strong></div>
-          <div class="metric-row"><span class="label">ECHO RESPONSE</span><strong>${formatLatency(ping("remote_ping"))}</strong></div>
+          <div class="metric-row"><span class="label">LINK RESONANCE<br><span class="code">ETHERNET LINK</span></span><strong>${formatResonance()}</strong></div>
+          <div class="metric-row"><span class="label">LOCAL ENTITY<br><span class="code">IP CONFIGURATION</span></span><strong>${formatAddress()}</strong></div>
+          <div class="metric-row"><span class="label">GATEWAY RESPONSE<br><span class="code">PING RTT</span></span><strong>${formatLatency(ping("gateway_ping"))}</strong></div>
+          <div class="metric-row"><span class="label">REMOTE ENTITY<br><span class="code">DISCOVERY TARGET</span></span><strong>${ping("remote_ping")?.reachable ? "SPECTER RE-01" : "NOT ACQUIRED"}</strong></div>
+          <div class="metric-row"><span class="label">ECHO RESPONSE<br><span class="code">REMOTE PING RTT</span></span><strong>${formatLatency(ping("remote_ping"))}</strong></div>
         </div>
       </section>
-      <aside class="panel">
-        <p class="label">FIELD CONDITION</p>
+      <aside class="panel control-panel">
         <div class="condition ${stateClass}">
-          <span class="label">GLOBAL STATUS</span>
-          <strong>${conditionText()}</strong>
+          <span class="label">FIELD CONDITION</span>
+          <strong><span class="status-symbol">●</span>${conditionText()}</strong>
         </div>
         <div class="readout">
-          <span>CH-A / ETH0</span>
-          <strong>${link().speed_mbps ? `${link().speed_mbps} Mbps` : "NO CARRIER"}</strong>
+          <span>TYPEPLATE</span>
+          <strong>ES-01 / ETH0</strong>
         </div>
-        <div class="actions">
-          <button class="action" type="button" data-action="analysis">INITIATE ANALYSIS</button>
-          <button class="action secondary" type="button" data-action="entity">ENTITY SCAN</button>
+        <button class="action action-primary" type="button" data-action="analysis">INITIATE ANALYSIS</button>
+      </aside>
+    </div>
+  `;
+}
+
+function menuScreen() {
+  setActiveView("menu");
+  screen.innerHTML = `
+    <div class="menu-layout">
+      <section class="panel menu-panel">
+        <div class="panel-heading">
+          <span class="section-code">OPERATOR SELECTION MATRIX</span>
+          <h2 class="screen-title">SPECTER MENU</h2>
         </div>
+        <div class="menu-grid">
+          <button class="menu-tile" type="button" data-action="analysis">
+            <span>01</span>
+            <strong>FULL ANALYSIS</strong>
+            <em>Link, echo, loss, capacity</em>
+          </button>
+          <button class="menu-tile" type="button" data-action="entity">
+            <span>02</span>
+            <strong>ENTITY SCAN</strong>
+            <em>Acquire RE-01 presence</em>
+          </button>
+          <button class="menu-tile" type="button" data-action="analysis">
+            <span>03</span>
+            <strong>RESONANCE TEST</strong>
+            <em>Field capacity / iperf3</em>
+          </button>
+          <button class="menu-tile" type="button" data-action="diagnostics">
+            <span>04</span>
+            <strong>DIAGNOSTICS</strong>
+            <em>Technical register view</em>
+          </button>
+        </div>
+      </section>
+      <aside class="panel panel-compact">
+        <p class="label">UNIT STATUS</p>
+        <div class="readout">
+          <span>FIELD</span>
+          <strong>${link().link_detected ? "LOCKED" : "COLLAPSED"}</strong>
+        </div>
+        <button class="action secondary" type="button" data-action="refresh">RETURN</button>
+      </aside>
+    </div>
+  `;
+}
+
+function entityScanScreen() {
+  setActiveView("analysis");
+  screen.innerHTML = `
+    <div class="entity-scan">
+      <section class="panel scan-panel">
+        <div class="panel-heading">
+          <span class="section-code">ENTITY ACQUISITION / LOCAL SECTOR</span>
+          <h2 class="screen-title">ENTITY SCAN</h2>
+        </div>
+        <div class="scan-reticle" aria-hidden="true">
+          <span></span>
+        </div>
+        <p>SEARCHING FOR REMOTE ENTITY</p>
+        <strong>${formatTarget()}</strong>
+      </section>
+    </div>
+  `;
+  setTimeout(() => fetchScan(false), 1400);
+}
+
+function diagnosticsScreen() {
+  setActiveView("menu");
+  screen.innerHTML = `
+    <div class="fault-layout">
+      <section class="panel">
+        <div class="panel-heading">
+          <span class="section-code">TECHNICAL REGISTER</span>
+          <h2 class="screen-title">DIAGNOSTICS</h2>
+        </div>
+        <div class="metrics">
+          <div class="metric-row"><span class="label">INTERFACE</span><strong>${scan().interface ?? "unknown"}</strong></div>
+          <div class="metric-row"><span class="label">REMOTE TARGET</span><strong>${formatTarget()}</strong></div>
+          <div class="metric-row"><span class="label">GATEWAY</span><strong>${scan().ip_config?.gateway ?? "not found"}</strong></div>
+          <div class="metric-row"><span class="label">DNS</span><strong>${(scan().ip_config?.dns_servers ?? []).join(", ") || "not found"}</strong></div>
+          <div class="metric-row"><span class="label">STATUS</span><strong>${severity().toUpperCase()}</strong></div>
+        </div>
+      </section>
+      <aside class="panel panel-compact">
+        <p class="label">REGISTER CONTROL</p>
+        <button class="action" type="button" data-action="menu">MENU</button>
+        <button class="action secondary" type="button" data-action="refresh">RETURN</button>
       </aside>
     </div>
   `;
 }
 
 function analysisScreen() {
-  activeView = "analysis";
+  setActiveView("analysis");
   screen.innerHTML = `
-    <div class="grid">
+    <div class="analysis-layout">
       <section class="panel">
-        <h2 class="screen-title">ETHERNETIC ANALYSIS</h2>
+        <div class="panel-heading">
+          <span class="section-code">ANALYSIS SEQUENCE / ACTIVE</span>
+          <h2 class="screen-title">ETHERNETIC ANALYSIS</h2>
+        </div>
         <div class="step-row" data-step="0"><span>LINK INTEGRITY</span><span>QUEUED</span></div>
         <div class="step-row" data-step="1"><span>GATEWAY RESPONSE</span><span>QUEUED</span></div>
         <div class="step-row" data-step="2"><span>ENTITY ECHO</span><span>QUEUED</span></div>
@@ -209,14 +331,17 @@ function analysisScreen() {
 }
 
 function resultScreen() {
-  activeView = "result";
+  setActiveView("result");
   const capacity = formatCapacity();
   const capacityNumber = capacity.includes("Mbps") ? capacity.replace(" Mbps", "") : capacity;
   const stateClass = severity() === "warn" ? "anomaly" : severity() === "fail" ? "critical" : "";
   screen.innerHTML = `
-    <div class="grid">
+    <div class="result-layout">
       <section class="panel">
-        <h2 class="screen-title">ANALYSIS COMPLETE</h2>
+        <div class="panel-heading">
+          <span class="section-code">ANALYSIS RECORD / FINAL</span>
+          <h2 class="screen-title">ANALYSIS COMPLETE</h2>
+        </div>
         <div class="metrics">
           <div class="metric-row"><span class="label">LINK RESONANCE<br><span class="code">ETHERNET LINK</span></span><strong>${formatResonance()}</strong></div>
           <div class="metric-row"><span class="label">ECHO RESPONSE<br><span class="code">PING RTT</span></span><strong>${formatLatency(ping("remote_ping"))}</strong></div>
@@ -231,7 +356,7 @@ function resultScreen() {
         <div class="hero-unit">${capacity.includes("Mbps") ? "Mbps" : ""}</div>
         <div class="condition ${stateClass}">
           <span class="label">FIELD CONDITION</span>
-          <strong>${conditionText()}</strong>
+          <strong><span class="status-symbol">●</span>${conditionText()}</strong>
         </div>
       </aside>
     </div>
@@ -239,14 +364,32 @@ function resultScreen() {
 }
 
 function errorScreen() {
-  activeView = "fault";
+  setActiveView("fault");
   screen.innerHTML = `
     <div class="idle">
       <section>
+        <div class="status-symbol critical">×</div>
         <h1>UNKNOWN PHENOMENON</h1>
         <p>ANALYSIS INCONCLUSIVE</p>
         <div class="error-code">REFERENCE E-042</div>
       </section>
+    </div>
+  `;
+}
+
+function screensaverScreen() {
+  clearInterval(analysisProgressTimer);
+  screensaverActive = true;
+  app.classList.add("screensaver-mode");
+  setActiveView("screensaver");
+  screen.innerHTML = `
+    <div class="screensaver">
+      <div class="screensaver-mark">
+        <span>◈</span>
+        <strong>SPECTER ES-01</strong>
+        <em>FIELD UNIT STANDBY</em>
+      </div>
+      <div class="screensaver-trace"></div>
     </div>
   `;
 }
@@ -275,7 +418,7 @@ function animateAnalysisProgress() {
 }
 
 function render() {
-  if (!latestPayload) return;
+  if (!latestPayload || screensaverActive) return;
   const state = value(["ui", "state"], "system_error");
   if (state === "no_link") {
     idleScreen();
@@ -300,7 +443,7 @@ async function fetchScan(full = false) {
 }
 
 async function runAnalysis() {
-  if (analysisRunning) return;
+  if (analysisRunning || screensaverActive) return;
   analysisRunning = true;
   analysisScreen();
   try {
@@ -312,23 +455,55 @@ async function runAnalysis() {
   }
 }
 
+function resetScreensaverTimer() {
+  clearTimeout(screensaverTimer);
+  if (!screensaverActive) {
+    screensaverTimer = setTimeout(screensaverScreen, SCREENSAVER_DELAY_MS);
+  }
+}
+
+function wakeFromScreensaver() {
+  if (!screensaverActive) return;
+  screensaverActive = false;
+  app.classList.remove("screensaver-mode");
+  bootScreen();
+  setTimeout(() => fetchScan(false), BOOT_DELAY_MS);
+}
+
+function registerActivity() {
+  if (screensaverActive) {
+    wakeFromScreensaver();
+  }
+  resetScreensaverTimer();
+}
+
 screen.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
-  if (button.dataset.action === "analysis" || button.dataset.action === "entity") {
+  if (button.dataset.action === "analysis") {
     runAnalysis();
+  } else if (button.dataset.action === "entity") {
+    entityScanScreen();
   } else if (button.dataset.action === "refresh") {
     fetchScan(false);
+  } else if (button.dataset.action === "menu") {
+    menuScreen();
+  } else if (button.dataset.action === "diagnostics") {
+    diagnosticsScreen();
   }
 });
 
-scanButton.addEventListener("click", runAnalysis);
-menuButton.addEventListener("click", () => fetchScan(false));
+menuButton.addEventListener("click", menuScreen);
+
+["pointerdown", "keydown"].forEach((eventName) => {
+  window.addEventListener(eventName, registerActivity, { passive: true });
+});
 
 setClock();
 setInterval(setClock, 1000);
 bootScreen();
-setTimeout(() => fetchScan(false), 2600);
+resetScreensaverTimer();
+setTimeout(() => fetchScan(false), BOOT_DELAY_MS);
 setInterval(() => {
-  if (!analysisRunning && activeView !== "result") fetchScan(false);
+  if (!analysisRunning && activeView !== "result" && !screensaverActive) fetchScan(false);
 }, 30000);

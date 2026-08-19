@@ -101,6 +101,8 @@ sudo systemctl enable --now specter-es01-dashboard.service
 
 The web UI prototype is designed for the Waveshare 7inch HDMI LCD at 1024x600 landscape. It uses the same diagnostic core as the CLI.
 
+The UI includes a moving standby screen to reduce static image retention. Touching the display exits standby and shows the SPECTER boot screen before returning to live status.
+
 Start it manually on `specter-es01`:
 
 ```bash
