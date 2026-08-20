@@ -1590,7 +1590,7 @@ function screensaverScreen() {
           <text y="15" data-lock-readout>ENTITY ACQUISITION</text>
         </g>
         <g class="tunnel-label tunnel-target-label">
-          <text>ENTITY VECTOR / CH-07</text>
+          <text data-entity-id>ENTITY VECTOR / CH-07</text>
           <text y="15" data-vector-readout>VECTOR RATE 000 px/s</text>
         </g>
       </svg>
@@ -1617,16 +1617,19 @@ function startScreensaverAnimation() {
   const arrayLabel = svg.querySelector(".tunnel-array-label");
   const targetLabel = svg.querySelector(".tunnel-target-label");
   const lockReadout = svg.querySelector("[data-lock-readout]");
+  const entityIdReadout = svg.querySelector("[data-entity-id]");
   const vectorReadout = svg.querySelector("[data-vector-readout]");
   const startedAt = performance.now();
   let lastRenderedAt = 0;
   let lastTickAt = startedAt;
   let lockAmount = 0;
-  let captureSeconds = 0;
-  let escapeUntil = 0;
-  let escapeCooldownUntil = 0;
+  let phase = "pursuit";
+  let phaseStartedAt = startedAt;
+  let respawnUntil = 0;
+  let entityIndex = 0;
   let waypointIndex = 0;
 
+  const entityIds = ["07", "12", "19", "31", "42", "58", "73"];
   const waypoints = [
     { x: 790, y: 122 },
     { x: 884, y: 448 },
@@ -1669,6 +1672,8 @@ function startScreensaverAnimation() {
     const deltaSeconds = clamp((now - lastTickAt) / 1000, 0.001, 0.08);
     lastTickAt = now;
     const seconds = (now - startedAt) / 1000 + 5.4;
+    const phaseSeconds = (now - phaseStartedAt) / 1000;
+    const captureProgress = phase === "capture" ? clamp(phaseSeconds / 1.05, 0, 1) : phase === "destroy" ? 1 : 0;
 
     let waypoint = waypoints[waypointIndex];
     let targetToWaypointX = waypoint.x - targetState.x;
@@ -1682,9 +1687,8 @@ function startScreensaverAnimation() {
       targetToWaypointDistance = length(targetToWaypointX, targetToWaypointY);
     }
 
-    const escaping = now < escapeUntil;
-    const desiredTargetSpeed = escaping ? 350 : 72;
-    const targetSteering = escaping ? 5.6 : 1.8;
+    const desiredTargetSpeed = phase === "capture" ? 72 * (1 - captureProgress) : phase === "destroy" ? 0 : 72;
+    const targetSteering = phase === "capture" ? 4.8 : phase === "destroy" ? 8 : 1.8;
     const desiredTargetVx = targetToWaypointX / Math.max(1, targetToWaypointDistance) * desiredTargetSpeed;
     const desiredTargetVy = targetToWaypointY / Math.max(1, targetToWaypointDistance) * desiredTargetSpeed;
     const targetBlend = Math.min(1, targetSteering * deltaSeconds);
@@ -1693,41 +1697,78 @@ function startScreensaverAnimation() {
     targetState.x = clamp(targetState.x + targetState.vx * deltaSeconds, 72, 952);
     targetState.y = clamp(targetState.y + targetState.vy * deltaSeconds, 68, 532);
 
-    const chaseX = targetState.x - chaserState.x;
-    const chaseY = targetState.y - chaserState.y;
-    const chaseDistance = length(chaseX, chaseY);
-    const desiredChaserSpeed = clamp(chaseDistance * 1.28, 36, 238);
-    const desiredChaserVx = chaseX / Math.max(1, chaseDistance) * desiredChaserSpeed;
-    const desiredChaserVy = chaseY / Math.max(1, chaseDistance) * desiredChaserSpeed;
-    const chaserBlend = Math.min(1, 3.3 * deltaSeconds);
+    const initialChaseDistance = length(targetState.x - chaserState.x, targetState.y - chaserState.y);
+    const predictionSeconds = phase === "pursuit" ? clamp(initialChaseDistance / 260, 0.18, 1.15) : 0;
+    const pursuitX = targetState.x + targetState.vx * predictionSeconds;
+    const pursuitY = targetState.y + targetState.vy * predictionSeconds;
+    const chaseX = pursuitX - chaserState.x;
+    const chaseY = pursuitY - chaserState.y;
+    const pursuitDistance = length(chaseX, chaseY);
+    const desiredChaserSpeed = phase === "pursuit"
+      ? clamp(142 + pursuitDistance * 0.5, 142, 318)
+      : clamp(pursuitDistance * 4.2, 0, 260);
+    const desiredChaserVx = chaseX / Math.max(1, pursuitDistance) * desiredChaserSpeed;
+    const desiredChaserVy = chaseY / Math.max(1, pursuitDistance) * desiredChaserSpeed;
+    const chaserBlend = Math.min(1, (phase === "pursuit" ? 4.2 : 6.8) * deltaSeconds);
     chaserState.vx += (desiredChaserVx - chaserState.vx) * chaserBlend;
     chaserState.vy += (desiredChaserVy - chaserState.vy) * chaserBlend;
     chaserState.x = clamp(chaserState.x + chaserState.vx * deltaSeconds, 58, 966);
     chaserState.y = clamp(chaserState.y + chaserState.vy * deltaSeconds, 54, 546);
 
-    const lockTarget = clamp(1 - chaseDistance / 112, 0, 1);
+    const chaseDistance = length(targetState.x - chaserState.x, targetState.y - chaserState.y);
+    const lockTarget = clamp(1 - chaseDistance / 120, 0, 1);
     lockAmount += (lockTarget - lockAmount) * Math.min(1, deltaSeconds * 3.2);
-    if (!escaping && chaseDistance < 48 && now >= escapeCooldownUntil) {
-      captureSeconds += deltaSeconds;
-      if (captureSeconds > 1.15) {
-        waypointIndex = (waypointIndex + 3) % waypoints.length;
-        escapeUntil = now + 1650;
-        escapeCooldownUntil = now + 5200;
-        captureSeconds = 0;
-      }
-    } else {
-      captureSeconds = Math.max(0, captureSeconds - deltaSeconds * 1.8);
+
+    if (phase === "pursuit" && chaseDistance < 58) {
+      phase = "capture";
+      phaseStartedAt = now;
+    } else if (phase === "capture" && phaseSeconds >= 1.05) {
+      phase = "destroy";
+      phaseStartedAt = now;
+      targetState.vx = 0;
+      targetState.vy = 0;
+    } else if (phase === "destroy" && phaseSeconds >= 0.62) {
+      entityIndex = (entityIndex + 1) % entityIds.length;
+      waypointIndex = waypoints.reduce((bestIndex, point, index) => {
+        const best = waypoints[bestIndex];
+        return length(point.x - chaserState.x, point.y - chaserState.y)
+          > length(best.x - chaserState.x, best.y - chaserState.y) ? index : bestIndex;
+      }, 0);
+      const spawnPoint = waypoints[waypointIndex];
+      targetState.x = spawnPoint.x;
+      targetState.y = spawnPoint.y;
+      waypointIndex = (waypointIndex + 1) % waypoints.length;
+      targetState.vx = 18;
+      targetState.vy = -12;
+      phase = "pursuit";
+      phaseStartedAt = now;
+      respawnUntil = now + 560;
+      lockAmount = 0;
     }
 
     history.unshift({ x: chaserState.x, y: chaserState.y });
     if (history.length > 96) history.pop();
     const delayStep = 0.38 + (1 - lockAmount) * 3.45;
+    const synchronization = phase === "destroy"
+      ? 1
+      : phase === "capture"
+        ? captureProgress * captureProgress * (3 - 2 * captureProgress)
+        : lockAmount * 0.28;
+    const synchronizedAngle = seconds * 112;
     const frameGeometry = frames.map((frame, index) => {
-      const point = sampleHistory(index * delayStep);
+      const trailPoint = sampleHistory(index * delayStep);
+      const point = {
+        x: trailPoint.x + (targetState.x - trailPoint.x) * synchronization,
+        y: trailPoint.y + (targetState.y - trailPoint.y) * synchronization,
+      };
       const distanceToTarget = length(targetState.x - point.x, targetState.y - point.y);
-      const size = clamp(38 + distanceToTarget * 0.27, 38, 164);
-      const angle = seconds * (17 + (index % 3) * 4.1) + index * 17
-        + Math.sin(seconds * 0.73 - index * 0.42) * 19;
+      const freeSize = clamp(38 + distanceToTarget * 0.3, 38, 172);
+      const size = freeSize + (46 - freeSize) * synchronization;
+      const spinDirection = index % 2 === 0 ? 1 : -1;
+      const spinRate = 28 + index * 8.5 + distanceToTarget * 0.11 + length(targetState.vx, targetState.vy) * 0.08;
+      const freeAngle = spinDirection * seconds * spinRate + index * 31
+        + Math.sin(seconds * (0.82 + index * 0.075) - index * 0.42) * 38;
+      const angle = freeAngle + (synchronizedAngle - freeAngle) * synchronization;
       frame.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) rotate(${angle.toFixed(2)})`);
       frame.setAttribute("x", (-size / 2).toFixed(2));
       frame.setAttribute("y", (-size / 2).toFixed(2));
@@ -1744,6 +1785,9 @@ function startScreensaverAnimation() {
     target.setAttribute("transform", `translate(${targetState.x.toFixed(2)} ${targetState.y.toFixed(2)}) rotate(${targetHeading.toFixed(2)})`);
     targetRing.setAttribute("r", ringRadius.toFixed(2));
     targetCross.setAttribute("d", `M ${-crossExtent.toFixed(1)} 0 H ${crossExtent.toFixed(1)} M 0 ${-crossExtent.toFixed(1)} V ${crossExtent.toFixed(1)}`);
+    const visualPhase = now < respawnUntil ? "respawn" : phase;
+    svg.dataset.phase = visualPhase;
+    svg.dataset.entityId = entityIds[entityIndex];
 
     const labelAnchor = frameGeometry[Math.min(5, frameGeometry.length - 1)];
     arrayLabel.setAttribute(
@@ -1754,11 +1798,14 @@ function startScreensaverAnimation() {
       "transform",
       `translate(${clamp(targetState.x + ringRadius + 18, 24, 814).toFixed(1)} ${clamp(targetState.y + ringRadius + 14, 38, 550).toFixed(1)})`,
     );
-    lockReadout.textContent = escaping
-      ? "FIELD LOCK COLLAPSE"
-      : lockAmount > 0.72
+    lockReadout.textContent = phase === "destroy"
+      ? "ENTITY DISSIPATION"
+      : phase === "capture"
         ? "FIELD LOCK ACQUIRED"
-        : "ENTITY ACQUISITION";
+        : now < respawnUntil
+          ? "NEW ENTITY DETECTED"
+          : "ENTITY ACQUISITION";
+    entityIdReadout.textContent = `ENTITY VECTOR / CH-${entityIds[entityIndex]}`;
     vectorReadout.textContent = `VECTOR RATE ${String(Math.round(targetSpeed)).padStart(3, "0")} px/s`;
     screensaverAnimationFrame = requestAnimationFrame(animate);
   };

@@ -1564,6 +1564,20 @@ button[aria-busy="true"] {
   stroke: rgba(135, 199, 197, 0.74);
 }
 
+.containment-tunnel[data-phase="capture"] .tunnel-frames rect,
+.containment-tunnel[data-phase="destroy"] .tunnel-frames rect {
+  fill: rgba(216, 111, 97, 0.18);
+  stroke: var(--red);
+  stroke-width: 2.4;
+  animation: containment-lock-blink 0.18s steps(2, end) infinite;
+  filter: url("#containment-glow");
+}
+
+.containment-tunnel[data-phase="capture"] .tunnel-label text:last-child,
+.containment-tunnel[data-phase="destroy"] .tunnel-label text:last-child {
+  fill: var(--red);
+}
+
 .containment-target {
   filter: url("#containment-glow");
 }
@@ -1589,6 +1603,23 @@ button[aria-busy="true"] {
   vector-effect: non-scaling-stroke;
 }
 
+.containment-tunnel[data-phase="destroy"] .containment-target {
+  animation: containment-target-destroy 0.62s steps(5, end) both;
+}
+
+.containment-tunnel[data-phase="destroy"] .containment-target circle,
+.containment-tunnel[data-phase="destroy"] .containment-target .target-cross {
+  stroke: var(--red);
+}
+
+.containment-tunnel[data-phase="destroy"] .containment-target .target-mark {
+  fill: var(--red);
+}
+
+.containment-tunnel[data-phase="respawn"] .containment-target {
+  animation: containment-target-respawn 0.56s steps(4, end) both;
+}
+
 .tunnel-label {
   fill: rgba(135, 199, 197, 0.68);
   font-family: "Lucida Console", "Courier New", monospace;
@@ -1612,6 +1643,22 @@ button[aria-busy="true"] {
 @keyframes standby-status-blink {
   0%, 76% { opacity: 0.9; }
   77%, 100% { opacity: 0.3; }
+}
+
+@keyframes containment-lock-blink {
+  0%, 48% { opacity: 1; }
+  49%, 100% { opacity: 0.28; }
+}
+
+@keyframes containment-target-destroy {
+  0% { opacity: 1; filter: url("#containment-glow") brightness(1); }
+  55% { opacity: 1; filter: url("#containment-glow") brightness(3); }
+  100% { opacity: 0; filter: url("#containment-glow") brightness(5); }
+}
+
+@keyframes containment-target-respawn {
+  0% { opacity: 0; filter: url("#containment-glow") brightness(4); }
+  100% { opacity: 1; filter: url("#containment-glow") brightness(1); }
 }
 
 @keyframes phosphor-roll {
