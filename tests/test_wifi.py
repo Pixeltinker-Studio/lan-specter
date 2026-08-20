@@ -10,11 +10,11 @@ class WifiParserTests(unittest.TestCase):
     def test_read_wifi_status_uses_networkmanager_measurements(self, run_command_mock):
         run_command_mock.side_effect = [
             CommandResult(command=("nmcli",), returncode=0, stdout="enabled\n", stderr=""),
-            CommandResult(command=("nmcli",), returncode=0, stdout="wlan0\twifi\tconnected\tSPECTER LAB\n", stderr=""),
+            CommandResult(command=("nmcli",), returncode=0, stdout="wlan0:wifi:connected:SPECTER LAB\n", stderr=""),
             CommandResult(
                 command=("nmcli",),
                 returncode=0,
-                stdout="*\tAA:BB:CC:DD:EE:01\tSPECTER LAB\tInfra\t36\t5180\t87\tWPA2\n",
+                stdout="*:AA\\:BB\\:CC\\:DD\\:EE\\:01:SPECTER LAB:Infra:36:5180:87:WPA2\n",
                 stderr="",
             ),
         ]
@@ -27,12 +27,14 @@ class WifiParserTests(unittest.TestCase):
         self.assertEqual(status.connection, "SPECTER LAB")
         self.assertEqual(status.access_points[0].signal_percent, 87)
         self.assertIn("yes", run_command_mock.call_args_list[2].args[0])
+        self.assertNotIn("--separator", run_command_mock.call_args_list[1].args[0])
+        self.assertNotIn("--separator", run_command_mock.call_args_list[2].args[0])
 
     @patch("specter.network.wifi.run_command")
     def test_read_wifi_status_does_not_scan_when_radio_is_disabled(self, run_command_mock):
         run_command_mock.side_effect = [
             CommandResult(command=("nmcli",), returncode=0, stdout="disabled\n", stderr=""),
-            CommandResult(command=("nmcli",), returncode=0, stdout="wlan0\twifi\tunavailable\t--\n", stderr=""),
+            CommandResult(command=("nmcli",), returncode=0, stdout="wlan0:wifi:unavailable:--\n", stderr=""),
         ]
 
         status = read_wifi_status(rescan=True)
@@ -53,16 +55,16 @@ class WifiParserTests(unittest.TestCase):
         self.assertEqual(run_command_mock.call_args.args[0], ("nmcli", "radio", "wifi", "off"))
 
     def test_split_escaped_fields_preserves_separator_and_backslash(self):
-        fields = split_escaped_fields("wlan0\twifi\tconnected\tLab\\\tNetwork\\\\East")
+        fields = split_escaped_fields("wlan0:wifi:connected:Lab\\:Network\\\\East")
 
-        self.assertEqual(fields, ("wlan0", "wifi", "connected", "Lab\tNetwork\\East"))
+        self.assertEqual(fields, ("wlan0", "wifi", "connected", "Lab:Network\\East"))
 
     def test_parse_wifi_devices_selects_only_wifi_adapters(self):
         output = "\n".join(
             (
-                "eth0\tethernet\tconnected\tWired connection 1",
-                "wlan0\twifi\tconnected\tSPECTER LAB",
-                "p2p-dev-wlan0\twifi-p2p\tdisconnected\t--",
+                "eth0:ethernet:connected:Wired connection 1",
+                "wlan0:wifi:connected:SPECTER LAB",
+                "p2p-dev-wlan0:wifi-p2p:disconnected:--",
             )
         )
 
@@ -71,9 +73,9 @@ class WifiParserTests(unittest.TestCase):
     def test_parse_access_points_keeps_bssids_and_real_signal_values(self):
         output = "\n".join(
             (
-                " \tAA:BB:CC:DD:EE:02\tGuest\tInfra\t11\t2462\t41\tWPA2",
-                "*\tAA:BB:CC:DD:EE:01\tSPECTER LAB\tInfra\t36\t5180\t87\tWPA2 WPA3",
-                " \tAA:BB:CC:DD:EE:03\t\tInfra\t1\t2412\t120\t--",
+                " :AA\\:BB\\:CC\\:DD\\:EE\\:02:Guest:Infra:11:2462:41:WPA2",
+                "*:AA\\:BB\\:CC\\:DD\\:EE\\:01:SPECTER LAB:Infra:36:5180:87:WPA2 WPA3",
+                " :AA\\:BB\\:CC\\:DD\\:EE\\:03::Infra:1:2412:120:--",
             )
         )
 

@@ -44,7 +44,7 @@ def read_wifi_status(*, interface: str | None = None, rescan: bool = False) -> W
 
     radio_enabled = _parse_radio_state(radio_result.stdout) if radio_result.returncode == 0 else None
     device_result = run_command(
-        ("nmcli", "-t", "--escape", "yes", "--separator", "\t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"),
+        ("nmcli", "-t", "--escape", "yes", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"),
         timeout_seconds=5,
     )
     if device_result.returncode != 0:
@@ -82,8 +82,6 @@ def read_wifi_status(*, interface: str | None = None, rescan: bool = False) -> W
             "-t",
             "--escape",
             "yes",
-            "--separator",
-            "\t",
             "-f",
             "IN-USE,BSSID,SSID,MODE,CHAN,FREQ,SIGNAL,SECURITY",
             "device",
@@ -164,7 +162,7 @@ def parse_access_points(output: str) -> tuple[WifiAccessPoint, ...]:
     return tuple(sorted(access_points, key=lambda access_point: (not access_point.in_use, -(access_point.signal_percent or -1))))
 
 
-def split_escaped_fields(line: str, separator: str = "\t") -> tuple[str, ...]:
+def split_escaped_fields(line: str, separator: str = ":") -> tuple[str, ...]:
     fields: list[str] = []
     current: list[str] = []
     escaped = False
