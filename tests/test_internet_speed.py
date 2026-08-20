@@ -32,6 +32,24 @@ class InternetSpeedTests(unittest.TestCase):
         self.assertEqual(result.jitter_ms, 1.26)
         self.assertEqual(result.bytes_received, 429630000)
 
+    def test_parse_librespeed_v1_0_14_array_output(self):
+        payload = (FIXTURES / "librespeed_v1_0_14_success.json").read_text(encoding="utf-8")
+
+        result = parse_librespeed_json(payload, interface="eth0")
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.interface, "eth0")
+        self.assertEqual(result.server_name, "Frankfurt Measurement Node")
+        self.assertEqual(result.download_mbps, 512.34)
+        self.assertEqual(result.upload_mbps, 81.27)
+
+    def test_parser_rejects_empty_librespeed_result_array(self):
+        result = parse_librespeed_json("[]", interface="eth0")
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "invalid_output")
+        self.assertIn("no measurement result", result.error)
+
     def test_parser_rejects_incomplete_success_output(self):
         result = parse_librespeed_json('{"download": 100}', interface="eth0")
 

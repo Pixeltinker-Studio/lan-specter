@@ -143,8 +143,19 @@ def parse_librespeed_json(payload: str, *, interface: str | None) -> InternetSpe
     except json.JSONDecodeError as exc:
         return _failure(interface, "invalid_output", f"Invalid LibreSpeed JSON: {exc}")
 
+    # LibreSpeed v1.0.14 always emits a JSON array because the CLI supports
+    # testing multiple servers in one run. SPECTER requests one server, so a
+    # successful response contains exactly one result object. Older releases
+    # emitted that object directly; retain support for both formats.
+    if isinstance(data, list):
+        if not data:
+            return _failure(interface, "invalid_output", "LibreSpeed returned no measurement result")
+        if len(data) != 1:
+            return _failure(interface, "invalid_output", "LibreSpeed returned multiple measurement results")
+        data = data[0]
+
     if not isinstance(data, dict):
-        return _failure(interface, "invalid_output", "LibreSpeed output must be a JSON object")
+        return _failure(interface, "invalid_output", "LibreSpeed result must be a JSON object")
 
     required = ("download", "upload", "ping", "jitter")
     missing = [name for name in required if not _is_number(data.get(name))]
@@ -283,7 +294,9 @@ def _command_error(stderr: str, stdout: str) -> str:
 def _structured_output(stdout: str, stderr: str) -> str:
     for candidate in (stdout.strip(), *reversed(stdout.splitlines()), *reversed(stderr.splitlines())):
         stripped = candidate.strip()
-        if stripped.startswith("{") and stripped.endswith("}"):
+        if (stripped.startswith("{") and stripped.endswith("}")) or (
+            stripped.startswith("[") and stripped.endswith("]")
+        ):
             return stripped
     return stdout.strip()
 

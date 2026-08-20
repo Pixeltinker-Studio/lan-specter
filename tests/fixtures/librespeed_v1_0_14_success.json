@@ -1,0 +1,19 @@
+[
+  {
+    "timestamp": "2026-08-20T10:15:30Z",
+    "server": {
+      "name": "Frankfurt Measurement Node",
+      "url": "https://speed.example.net/"
+    },
+    "client": {
+      "ip": "198.51.100.24"
+    },
+    "bytes_sent": 121905321,
+    "bytes_received": 768510000,
+    "ping": 12.41,
+    "jitter": 0.83,
+    "upload": 81.27,
+    "download": 512.34,
+    "share": ""
+  }
+]
