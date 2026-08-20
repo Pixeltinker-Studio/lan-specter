@@ -115,6 +115,7 @@ button:disabled {
 
 .viewport {
   position: relative;
+  min-height: 0;
   overflow: hidden;
   padding: 24px 32px;
 }
@@ -285,6 +286,7 @@ button:disabled {
 
 .menu-layout {
   grid-template-columns: 1fr 270px;
+  min-height: 0;
 }
 
 .wifi-layout {
@@ -609,13 +611,49 @@ button:disabled {
 }
 
 .menu-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   padding: 22px;
+  overflow: hidden;
 }
 
 .menu-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+  min-height: 0;
+  align-content: start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 10px;
+  scrollbar-color: var(--green) var(--line-soft);
+  scrollbar-width: auto;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.menu-grid::-webkit-scrollbar {
+  width: 12px;
+}
+
+.menu-grid::-webkit-scrollbar-track {
+  border: 1px solid var(--line);
+  background: var(--line-soft);
+}
+
+.menu-grid::-webkit-scrollbar-thumb {
+  border: 2px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--green);
+}
+
+.menu-scroll-hint {
+  padding: 9px 10px 0;
+  color: var(--amber);
+  font-size: 12px;
+  text-align: center;
 }
 
 .menu-tile {
@@ -1201,13 +1239,53 @@ button:disabled {
   .ready-layout,
   .analysis-layout,
   .result-layout,
-  .menu-layout,
   .wifi-layout,
   .bluetooth-layout,
   .beeper-layout,
   .boot,
   .fault-layout {
     grid-template-columns: 1fr;
+  }
+
+  .viewport {
+    padding: 12px 14px;
+  }
+
+  .menu-layout {
+    grid-template-columns: minmax(0, 1fr) 180px;
+    gap: 12px;
+  }
+
+  .menu-panel {
+    padding: 12px;
+  }
+
+  .menu-panel .panel-heading {
+    margin-bottom: 8px;
+  }
+
+  .menu-panel .screen-title {
+    margin-bottom: 8px;
+    font-size: 24px;
+  }
+
+  .menu-grid {
+    gap: 10px;
+    padding-right: 8px;
+  }
+
+  .menu-tile {
+    min-height: 108px;
+    gap: 4px;
+    padding: 10px;
+  }
+
+  .menu-tile strong {
+    font-size: 17px;
+  }
+
+  .menu-tile em {
+    font-size: 11px;
   }
 
   .hero-value {

@@ -283,7 +283,7 @@ function menuScreen() {
           <span class="section-code">OPERATOR SELECTION MATRIX</span>
           <h2 class="screen-title">SPECTER MENU</h2>
         </div>
-        <div class="menu-grid">
+        <div class="menu-grid" aria-label="Available functions" tabindex="0">
           <button class="menu-tile" type="button" data-action="analysis">
             <span>01</span>
             <strong>FULL ANALYSIS</strong>
@@ -320,6 +320,7 @@ function menuScreen() {
             <em>Piezo status, mute and test</em>
           </button>
         </div>
+        <div class="menu-scroll-hint" aria-hidden="true">SWIPE TO VIEW ALL FUNCTIONS</div>
       </section>
       <aside class="panel panel-compact">
         <p class="label">UNIT STATUS</p>
