@@ -1,5 +1,7 @@
 # SPECTER Visual Design Direction
 
+User-facing terminology, tone, measurement labels, and error copy are defined in `docs/design/specter-language-design.md`. Visual and language direction must be applied together.
+
 ## Target Hardware
 
 - Display: Waveshare 7-inch HDMI LCD
