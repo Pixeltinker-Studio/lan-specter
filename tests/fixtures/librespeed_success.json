@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-08-20T10:14:28.000000+02:00",
+  "server": {
+    "name": "Berlin Measurement Node",
+    "url": "https://speed.example.net/"
+  },
+  "client": {
+    "ip": "198.51.100.23",
+    "hostname": "example.invalid",
+    "city": "Berlin",
+    "region": "Berlin",
+    "country": "DE",
+    "loc": "52.5200,13.4050",
+    "org": "AS64500 Example Network",
+    "postal": "10115",
+    "timezone": "Europe/Berlin"
+  },
+  "bytes_sent": 70770000,
+  "bytes_received": 429630000,
+  "ping": 18.73,
+  "jitter": 1.26,
+  "upload": 47.18,
+  "download": 286.42,
+  "share": ""
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "id": 1,
+    "name": "Self-hosted LibreSpeed",
+    "server": "https://speed.example.net/",
+    "dlURL": "garbage.php",
+    "ulURL": "empty.php",
+    "pingURL": "empty.php",
+    "getIpURL": "getIP.php"
+  }
+]

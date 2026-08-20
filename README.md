@@ -1,8 +1,19 @@
 # lan-specter
 
-`lan-specter` is the software base for SPECTER, a Raspberry Pi based portable Ethernet/LAN diagnostic tool.
+`lan-specter` is the software base for SPECTER, a portable Ethernet/LAN diagnostic tool built for a **Raspberry Pi 5 running Raspberry Pi OS Lite 64-bit**.
 
-This first milestone intentionally contains no display, GPIO, touch, PoE, or hardware-specific TFT assumptions. The code builds a small CLI-driven diagnostic core that can later feed a TFT UI.
+The ES-01 uses the Raspberry Pi 5 as its fixed target platform. The HDMI UI is designed for the Waveshare 7-inch display at 1024x600 in landscape orientation and is operated by capacitive touch.
+
+## Target Platform
+
+- Raspberry Pi 5
+- Raspberry Pi OS Lite 64-bit
+- ARM64 / `aarch64`
+- Waveshare 7-inch HDMI LCD
+- 1024x600 landscape
+- USB capacitive touch
+
+The installation instructions in this document assume this platform. Older Raspberry Pi models, 32-bit Raspberry Pi OS, desktop images, and non-ARM64 systems are not deployment targets.
 
 ## Planning and Issues
 
@@ -15,6 +26,7 @@ Features, bugs, and technical tasks are tracked in the [LAN Specter project](htt
 - Read basic IP configuration with `ip`
 - Ping gateway, a remote SPECTER entity, and optionally an internet target
 - Run an `iperf3` client test against a remote RE-01
+- Run an operator-initiated Internet speed test with `librespeed-cli`
 - Return structured diagnostic results before formatting them for the CLI
 
 ## Raspberry Pi Setup
@@ -23,8 +35,40 @@ Install the expected system tools on both Raspberry Pis:
 
 ```bash
 sudo apt update
-sudo apt install bluez iperf3 ethtool lldpd network-manager python3-gpiozero python3-lgpio python3-pip python3-venv git avahi-daemon libnss-mdns
+sudo apt install bluez iperf3 ethtool lldpd network-manager python3-gpiozero python3-lgpio python3-pip python3-venv git curl ca-certificates avahi-daemon libnss-mdns
 ```
+
+Install the ARM64 build of `librespeed-cli` on ES-01. The commands below are specifically for Raspberry Pi 5 with Raspberry Pi OS Lite 64-bit:
+
+```bash
+SPECTER_LIBRESPEED_VERSION=1.0.14
+SPECTER_LIBRESPEED_TMP="$(mktemp -d)"
+SPECTER_LIBRESPEED_ARCHIVE="librespeed-cli_${SPECTER_LIBRESPEED_VERSION}_linux_arm64.tar.gz"
+
+curl -fL \
+  "https://github.com/librespeed/speedtest-cli/releases/download/v${SPECTER_LIBRESPEED_VERSION}/${SPECTER_LIBRESPEED_ARCHIVE}" \
+  -o "${SPECTER_LIBRESPEED_TMP}/${SPECTER_LIBRESPEED_ARCHIVE}"
+
+curl -fL \
+  "https://github.com/librespeed/speedtest-cli/releases/download/v${SPECTER_LIBRESPEED_VERSION}/checksums.txt" \
+  -o "${SPECTER_LIBRESPEED_TMP}/checksums.txt"
+
+(
+  cd "${SPECTER_LIBRESPEED_TMP}"
+  sha256sum --check --ignore-missing checksums.txt
+  tar -xzf "${SPECTER_LIBRESPEED_ARCHIVE}"
+)
+
+sudo install -m 0755 \
+  "${SPECTER_LIBRESPEED_TMP}/librespeed-cli" \
+  /usr/local/bin/librespeed-cli
+
+rm -rf "${SPECTER_LIBRESPEED_TMP}"
+
+/usr/local/bin/librespeed-cli --version
+```
+
+Release `v1.0.14` and its checksums are published by the [official LibreSpeed project](https://github.com/librespeed/speedtest-cli/releases/tag/v1.0.14).
 
 Set the hostnames:
 
@@ -148,6 +192,10 @@ The web UI prototype is designed for the Waveshare 7-inch HDMI LCD at **1024x600
 After startup, the UNIT PLATE is the HOME view. Its `MENU` control opens the subsystem routing matrix; the matrix uses `HOME` to return to the plate, while instrument views use `MENU` to return to the matrix.
 
 The UI includes a moving standby screen to reduce static image retention. Touching the display exits standby and shows the SPECTER boot screen before returning to the UNIT PLATE.
+
+The `EXTERNAL CAPACITY` menu entry runs a separate Internet measurement and never requires RE-01. It uses `librespeed-cli` JSON output for download, upload, ping, and jitter. The test starts only after the operator reviews the data-use and public-IP notice. It runs asynchronously, can be cancelled, and is limited by both the LibreSpeed HTTP timeout and a hard process timeout. No result-sharing or telemetry option is requested.
+
+Configure the test in `/etc/default/specter` with the `SPECTER_LIBRESPEED_*` values from `config/specter.env.example`. By default, LibreSpeed's public server pool is used. For a self-hosted backend, copy `config/librespeed-servers.example.json`, replace its example server details, and set `SPECTER_LIBRESPEED_LOCAL_JSON` to the resulting absolute path. A remotely hosted server list can instead be selected with `SPECTER_LIBRESPEED_SERVER_JSON`. The configured test server necessarily sees the device's public IP address, and transfer volume varies with available connection capacity and test duration.
 
 Start it manually on `specter-es01`:
 

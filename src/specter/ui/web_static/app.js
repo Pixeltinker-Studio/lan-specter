@@ -40,10 +40,15 @@ const uiState = {
   pointerActive: false,
   beeper: null,
   beeperError: null,
+  internetSpeed: null,
+  internetSpeedError: null,
+  internetSpeedRequest: null,
+  internetSpeedReview: false,
 };
 let analysisProgressTimer = null;
 let screensaverTimer = null;
 let bluetoothBeeperTimer = null;
+let internetSpeedPollTimer = null;
 let echoSamples = [];
 
 function setClock() {
@@ -157,6 +162,7 @@ function applyControlState() {
     const busy = (["analysis", "entity", "refresh"].includes(action) && uiState.scanPromise !== null)
       || (["wifi-rescan", "wifi-toggle"].includes(action) && (uiState.wifiRequest !== null || uiState.wifiControlRequest !== null))
       || (action === "bluetooth-scan" && uiState.bluetoothControlRequest !== null)
+      || (["internet-speed-start", "internet-speed-cancel"].includes(action) && uiState.internetSpeedRequest !== null)
       || (action === "beeper-mute" && uiState.operation === "beeper");
     button.disabled = busy
       || (requiresWifi && uiState.wifi?.radio_enabled !== true)
@@ -180,6 +186,7 @@ function updateFooter() {
     uiState.activeView === "diagnostics" ? "REGISTER" :
     uiState.activeView === "wifi" ? "WLAN" :
     uiState.activeView === "bluetooth" ? "BT FINDER" :
+    uiState.activeView === "internet-speed" ? "EXTERNAL" :
     uiState.activeView === "beeper" ? "ACOUSTIC" :
     uiState.activeView === "plate" ? "HOME" :
     uiState.activeView === "boot" ? "BOOT" :
@@ -430,10 +437,10 @@ function menuScreen() {
             <strong>BT FIELD FINDER</strong>
             <em>Track live BLE field strength</em>
           </button>
-          <button class="menu-tile" type="button" data-action="beeper">
+          <button class="menu-tile" type="button" data-action="internet-speed">
             <span>05</span>
-            <strong>ACOUSTIC SIGNALS</strong>
-            <em>Piezo status, mute and test</em>
+            <strong>EXTERNAL CAPACITY</strong>
+            <em>Internet download, upload, ping</em>
           </button>
           <button class="menu-tile" type="button" data-action="diagnostics">
             <span>06</span>
@@ -840,6 +847,258 @@ function openBluetoothScreen() {
   requestBluetooth();
 }
 
+function formatInternetValue(value, unit, digits = 2) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toFixed(digits)} ${unit}` : "not measured";
+}
+
+function formatDataVolume(bytes) {
+  const number = Number(bytes);
+  if (!Number.isFinite(number)) return "not reported";
+  if (number >= 1_000_000_000) return `${(number / 1_000_000_000).toFixed(2)} GB`;
+  return `${(number / 1_000_000).toFixed(1)} MB`;
+}
+
+function internetSpeedFailureTitle(code) {
+  return {
+    client_missing: "TEST CLIENT NOT AVAILABLE",
+    client_failed: "TEST CLIENT START ANOMALY",
+    no_interface: "FIELD INTERFACE OFFLINE",
+    no_internet: "EXTERNAL NETWORK NOT ACQUIRED",
+    timeout: "ANALYSIS TIME LIMIT EXCEEDED",
+    server_error: "TEST SERVER ANOMALY",
+    invalid_output: "RESULT FORMAT ANOMALY",
+    cancelled: "ANALYSIS ABORTED",
+    internal_error: "SYSTEM ERROR",
+  }[code] ?? "EXTERNAL ANALYSIS INCONCLUSIVE";
+}
+
+function internetSpeedScreen() {
+  setActiveView("internet-speed");
+  const snapshot = uiState.internetSpeed;
+  const request = snapshot?.request ?? { status: "idle" };
+  const config = snapshot?.configuration ?? {};
+  const result = snapshot?.result ?? null;
+  const backend = config.backend ?? "LibreSpeed.org public server pool";
+  const interfaceName = result?.interface ?? config.interface ?? "automatic selection";
+  const duration = Number(config.duration_seconds) || 10;
+
+  if (uiState.internetSpeedError) {
+    screen.innerHTML = `
+      <div class="internet-speed-layout">
+        <section class="fault-panel">
+          <p class="typeplate">EXTERNAL ANALYSIS / CONTROL CHANNEL</p>
+          <h1>CONTROL CHANNEL ANOMALY</h1>
+          <p>${escapeHtml(uiState.internetSpeedError)}</p>
+          <div class="error-code">REFERENCE X-041</div>
+        </section>
+        <aside class="panel internet-speed-controls">
+          <button class="action" type="button" data-action="internet-speed-refresh">RETRY STATUS ACQUISITION</button>
+        </aside>
+      </div>
+    `;
+  } else if (request.status === "running" || request.status === "cancelling") {
+    screen.innerHTML = `
+      <div class="internet-speed-layout">
+        <section class="panel">
+          <div class="panel-heading">
+            <span class="section-code">EXTERNAL NETWORK / LIBRESPEED</span>
+            <h2 class="screen-title">EXTERNAL CAPACITY ANALYSIS</h2>
+          </div>
+          <div class="activity-line"><span></span>${request.status === "cancelling" ? "ABORT SEQUENCE IN PROGRESS" : "ANALYSIS IN PROGRESS"}</div>
+          <div class="external-sweep" aria-hidden="true"><span></span></div>
+          <div class="metrics compact-metrics">
+            <div class="metric-row"><span class="label">FIELD INTERFACE</span><strong>${escapeHtml(interfaceName)}</strong></div>
+            <div class="metric-row"><span class="label">MEASUREMENT SERVER</span><strong>${escapeHtml(backend)}</strong></div>
+            <div class="metric-row"><span class="label">TEST WINDOW</span><strong>${duration} s DOWN / ${duration} s UP</strong></div>
+          </div>
+        </section>
+        <aside class="panel internet-speed-controls">
+          <div class="condition"><span class="label">EXTERNAL FIELD</span><strong>ACTIVE</strong></div>
+          <p class="technical-note">DOWNLOAD AND UPLOAD CHANNELS MAY SATURATE THE SELECTED INTERFACE</p>
+          <button class="action secondary" type="button" data-action="internet-speed-cancel" ${request.status === "cancelling" ? "disabled" : ""}>ABORT ANALYSIS</button>
+        </aside>
+      </div>
+    `;
+  } else if (request.status === "completed" && result?.success && !uiState.internetSpeedReview) {
+    const totalBytes = result.bytes_sent == null && result.bytes_received == null
+      ? null
+      : Number(result.bytes_sent ?? 0) + Number(result.bytes_received ?? 0);
+    screen.innerHTML = `
+      <div class="internet-speed-layout">
+        <section class="panel">
+          <div class="panel-heading">
+            <span class="section-code">EXTERNAL ANALYSIS RECORD / LIBRESPEED</span>
+            <h2 class="screen-title">EXTERNAL ANALYSIS COMPLETE</h2>
+          </div>
+          <div class="internet-result-grid">
+            <div><span>DOWNLOAD CAPACITY</span><strong>${formatInternetValue(result.download_mbps, "Mbps")}</strong><em>INTERNET DOWNLOAD</em></div>
+            <div><span>UPLOAD CAPACITY</span><strong>${formatInternetValue(result.upload_mbps, "Mbps")}</strong><em>INTERNET UPLOAD</em></div>
+            <div><span>ECHO RESPONSE</span><strong>${formatInternetValue(result.ping_ms, "ms")}</strong><em>LIBRESPEED PING</em></div>
+            <div><span>FIELD INSTABILITY</span><strong>${formatInternetValue(result.jitter_ms, "ms")}</strong><em>JITTER</em></div>
+          </div>
+        </section>
+        <aside class="panel internet-speed-controls">
+          <div class="condition"><span class="label">EXTERNAL FIELD</span><strong><span class="status-symbol">●</span>STABLE</strong></div>
+          <div class="readout"><span>FIELD INTERFACE</span><strong>${escapeHtml(interfaceName)}</strong></div>
+          <div class="readout"><span>MEASUREMENT SERVER</span><strong>${escapeHtml(result.server_name ?? result.server_url ?? "unknown")}</strong></div>
+          <div class="readout"><span>TRANSFER VOLUME</span><strong>${formatDataVolume(totalBytes)}</strong></div>
+          <button class="action" type="button" data-action="internet-speed-review">REVIEW TEST PARAMETERS</button>
+        </aside>
+      </div>
+    `;
+  } else if (["failed", "cancelled"].includes(request.status) && !uiState.internetSpeedReview) {
+    const code = result?.error_code ?? "server_error";
+    screen.innerHTML = `
+      <div class="internet-speed-layout">
+        <section class="fault-panel">
+          <p class="typeplate">EXTERNAL ANALYSIS / LIBRESPEED</p>
+          <h1>${internetSpeedFailureTitle(code)}</h1>
+          <p>${escapeHtml(result?.error ?? "LibreSpeed returned no valid measurement")}</p>
+          <div class="error-code">REFERENCE X-${code === "client_missing" ? "012" : code === "timeout" ? "028" : "042"}</div>
+        </section>
+        <aside class="panel internet-speed-controls">
+          <div class="readout"><span>FIELD INTERFACE</span><strong>${escapeHtml(interfaceName)}</strong></div>
+          <div class="readout"><span>MEASUREMENT SERVER</span><strong>${escapeHtml(backend)}</strong></div>
+          <button class="action" type="button" data-action="internet-speed-review">REVIEW TEST PARAMETERS</button>
+        </aside>
+      </div>
+    `;
+  } else {
+    screen.innerHTML = `
+      <div class="internet-speed-layout">
+        <section class="panel">
+          <div class="panel-heading">
+            <span class="section-code">EXTERNAL NETWORK / LIBRESPEED</span>
+            <h2 class="screen-title">EXTERNAL FIELD CAPACITY</h2>
+          </div>
+          <p class="external-summary">INTERNET DOWNLOAD, UPLOAD, PING AND JITTER. REMOTE ENTITY RE-01 NOT REQUIRED.</p>
+          <div class="external-notice">
+            <strong>EXTERNAL MEASUREMENT NOTICE</strong>
+            <span>THE SELECTED TEST SERVER RECEIVES THE PUBLIC IP ADDRESS</span>
+          </div>
+          <div class="metrics compact-metrics">
+            <div class="metric-row"><span class="label">DATA USE</span><strong>VARIABLE / CONNECTION CAPACITY</strong></div>
+            <div class="metric-row"><span class="label">TEST WINDOW</span><strong>${duration} s DOWN / ${duration} s UP</strong></div>
+            <div class="metric-row"><span class="label">TELEMETRY</span><strong>${escapeHtml(config.telemetry ?? "disabled").toUpperCase()}</strong></div>
+          </div>
+        </section>
+        <aside class="panel internet-speed-controls">
+          <div class="readout"><span>FIELD INTERFACE</span><strong>${escapeHtml(interfaceName)}</strong></div>
+          <div class="readout"><span>MEASUREMENT SERVER</span><strong>${escapeHtml(backend)}</strong></div>
+          <p class="technical-note">DOWNLOAD AND UPLOAD RUN AT AVAILABLE CONNECTION CAPACITY. TRANSFER VOLUME DEPENDS ON LINK SPEED.</p>
+          <button class="action action-primary" type="button" data-action="internet-speed-start">INITIATE EXTERNAL ANALYSIS</button>
+        </aside>
+      </div>
+    `;
+  }
+  applyControlState();
+}
+
+function scheduleInternetSpeedPoll() {
+  clearTimeout(internetSpeedPollTimer);
+  const status = uiState.internetSpeed?.request?.status;
+  if (["running", "cancelling"].includes(status)) {
+    internetSpeedPollTimer = setTimeout(() => requestInternetSpeed({ background: true }), 500);
+  }
+}
+
+async function requestInternetSpeed({ background = false } = {}) {
+  if (uiState.internetSpeedRequest) return uiState.internetSpeedRequest;
+  const previousStatus = uiState.internetSpeed?.request?.status;
+  const pending = (async () => {
+    try {
+      const response = await fetch("/api/internet-speed", { cache: "no-store", headers: { Accept: "application/json" } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error ?? `Internet speed status failed (${response.status})`);
+      uiState.internetSpeed = payload;
+      uiState.internetSpeedError = null;
+      const currentStatus = payload?.request?.status;
+      if (["running", "cancelling"].includes(previousStatus) && currentStatus === "completed") triggerBeeper("acquired");
+      if (["running", "cancelling"].includes(previousStatus) && currentStatus === "failed") triggerBeeper("error");
+    } catch (error) {
+      uiState.internetSpeedError = error instanceof Error ? error.message : "Internet speed status failed";
+    } finally {
+      if (!background || uiState.activeView === "internet-speed") internetSpeedScreen();
+    }
+    return uiState.internetSpeed;
+  })();
+  uiState.internetSpeedRequest = pending;
+  applyControlState();
+  try {
+    return await pending;
+  } finally {
+    if (uiState.internetSpeedRequest === pending) uiState.internetSpeedRequest = null;
+    applyControlState();
+    scheduleInternetSpeedPoll();
+  }
+}
+
+async function startInternetSpeed() {
+  if (uiState.internetSpeedRequest) return;
+  uiState.internetSpeedReview = false;
+  const pending = (async () => {
+    try {
+      const response = await fetch("/api/internet-speed", {
+        method: "POST",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      uiState.internetSpeed = payload;
+      uiState.internetSpeedError = response.ok || response.status === 409 ? null : `Internet speed start failed (${response.status})`;
+    } catch (error) {
+      uiState.internetSpeedError = error instanceof Error ? error.message : "Internet speed start failed";
+    } finally {
+      if (uiState.activeView === "internet-speed") internetSpeedScreen();
+    }
+  })();
+  uiState.internetSpeedRequest = pending;
+  applyControlState();
+  try {
+    await pending;
+  } finally {
+    if (uiState.internetSpeedRequest === pending) uiState.internetSpeedRequest = null;
+    applyControlState();
+    scheduleInternetSpeedPoll();
+  }
+}
+
+async function cancelInternetSpeed() {
+  if (uiState.internetSpeedRequest) return;
+  const pending = (async () => {
+    try {
+      const response = await fetch("/api/internet-speed", {
+        method: "DELETE",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      uiState.internetSpeed = payload;
+      uiState.internetSpeedError = response.ok || response.status === 409 ? null : `Internet speed abort failed (${response.status})`;
+    } catch (error) {
+      uiState.internetSpeedError = error instanceof Error ? error.message : "Internet speed abort failed";
+    } finally {
+      if (uiState.activeView === "internet-speed") internetSpeedScreen();
+    }
+  })();
+  uiState.internetSpeedRequest = pending;
+  applyControlState();
+  try {
+    await pending;
+  } finally {
+    if (uiState.internetSpeedRequest === pending) uiState.internetSpeedRequest = null;
+    applyControlState();
+    scheduleInternetSpeedPoll();
+  }
+}
+
+function openInternetSpeedScreen() {
+  uiState.internetSpeedReview = false;
+  internetSpeedScreen();
+  requestInternetSpeed();
+}
+
 function beeperScreen() {
   setActiveView("beeper");
   const beeper = uiState.beeper;
@@ -1243,6 +1502,17 @@ screen.addEventListener("click", (event) => {
     bluetoothScreen();
     stopBluetoothBeeper();
     scheduleBluetoothBeeper();
+  } else if (button.dataset.action === "internet-speed") {
+    openInternetSpeedScreen();
+  } else if (button.dataset.action === "internet-speed-start") {
+    startInternetSpeed();
+  } else if (button.dataset.action === "internet-speed-cancel") {
+    cancelInternetSpeed();
+  } else if (button.dataset.action === "internet-speed-refresh") {
+    requestInternetSpeed();
+  } else if (button.dataset.action === "internet-speed-review") {
+    uiState.internetSpeedReview = true;
+    internetSpeedScreen();
   } else if (button.dataset.action === "beeper") {
     openBeeperScreen();
   } else if (button.dataset.action === "beeper-test") {

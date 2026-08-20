@@ -1,4 +1,5 @@
 import unittest
+from importlib.resources import files
 from threading import Event, Thread
 
 from specter.core.results import Address, DiagnosticsResult, IpConfigResult, LinkResult, PingResult
@@ -6,6 +7,14 @@ from specter.ui.web import DemoState, ScanCoordinator, WebUiOptions, build_echo_
 
 
 class WebUiTests(unittest.TestCase):
+    def test_menu_replaces_sound_controls_with_external_capacity(self):
+        source = files("specter.ui.web_static").joinpath("app.js").read_text(encoding="utf-8")
+        menu_source = source[source.index("function menuScreen()") : source.index("function plateScreen()")]
+
+        self.assertIn('data-action="internet-speed"', menu_source)
+        self.assertIn("EXTERNAL CAPACITY", menu_source)
+        self.assertNotIn('data-action="beeper"', menu_source)
+
     def test_scan_coordinator_coalesces_concurrent_compatible_scans(self):
         started = Event()
         release = Event()

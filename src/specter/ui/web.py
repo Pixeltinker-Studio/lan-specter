@@ -11,8 +11,8 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from math import sin
-from threading import Condition, Lock
-from time import monotonic
+from threading import Condition, Event, Lock
+from time import monotonic, sleep
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
@@ -22,6 +22,12 @@ from specter.core.serialization import to_jsonable
 from specter.hardware.beeper import PATTERNS, BeeperService
 from specter.hardware.bluetooth import BluetoothScannerService
 from specter.network.discovery import DEFAULT_REMOTE_HOSTNAME, detect_remote
+from specter.network.internet_speed import (
+    InternetSpeedOptions,
+    InternetSpeedResult,
+    InternetSpeedService,
+    options_from_environment,
+)
 from specter.network.wifi import read_wifi_status, set_wifi_radio
 
 
@@ -41,6 +47,7 @@ class WebUiOptions:
     iperf_seconds: int = 5
     iperf_port: int = 5201
     wifi_interface: str | None = None
+    internet_speed_options: InternetSpeedOptions = field(default_factory=InternetSpeedOptions)
 
 
 @dataclass
@@ -218,6 +225,31 @@ class DemoState:
         }
 
 
+def _run_demo_internet_speed(options: InternetSpeedOptions, cancel_event: Event) -> InternetSpeedResult:
+    for _ in range(15):
+        if cancel_event.is_set():
+            return InternetSpeedResult(
+                success=False,
+                interface=options.interface or "wlan0",
+                error_code="cancelled",
+                error="Internet speed test cancelled by operator",
+            )
+        sleep(0.1)
+    return InternetSpeedResult(
+        success=True,
+        interface=options.interface or "wlan0",
+        server_name="SPECTER DEMO BACKEND",
+        server_url="https://speed.example.invalid/",
+        download_mbps=286.42,
+        upload_mbps=47.18,
+        ping_ms=18.73,
+        jitter_ms=1.26,
+        bytes_sent=70_770_000,
+        bytes_received=429_630_000,
+        client_ip="192.0.2.10",
+    )
+
+
 class ScanCoordinator:
     """Serialize scans and let concurrent callers share a compatible result."""
 
@@ -388,11 +420,16 @@ def serve(
     demo: bool = False,
     beeper_pin: int | None = None,
     mute: bool = False,
+    internet_speed_options: InternetSpeedOptions | None = None,
 ) -> int:
-    options = WebUiOptions()
+    options = WebUiOptions(internet_speed_options=internet_speed_options or options_from_environment())
     demo_state = DemoState()
     bluetooth_scanner = BluetoothScannerService()
     beeper = BeeperService(pin=beeper_pin, muted=mute)
+    internet_speed_service = InternetSpeedService(
+        options.internet_speed_options,
+        runner=_run_demo_internet_speed if demo else None,
+    )
     if beeper_pin is not None:
         beeper.trigger("boot")
     handler = build_handler(
@@ -401,6 +438,7 @@ def serve(
         demo_state=demo_state,
         bluetooth_scanner=bluetooth_scanner,
         beeper=beeper,
+        internet_speed_service=internet_speed_service,
     )
     server = ThreadingHTTPServer((host, port), handler)
     print(f"SPECTER UI listening on http://{host}:{port}")
@@ -414,6 +452,7 @@ def serve(
     finally:
         bluetooth_scanner.stop()
         beeper.stop()
+        internet_speed_service.stop()
         server.server_close()
     return 0
 
@@ -426,6 +465,7 @@ def build_handler(
     scan_coordinator: ScanCoordinator | None = None,
     bluetooth_scanner: BluetoothScannerService | None = None,
     beeper: BeeperService | None = None,
+    internet_speed_service: InternetSpeedService | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     coordinator = scan_coordinator or ScanCoordinator(
         lambda full_analysis: build_scan_payload(
@@ -438,6 +478,10 @@ def build_handler(
     wifi_lock = Lock()
     ble_scanner = bluetooth_scanner or BluetoothScannerService()
     beeper_service = beeper or BeeperService(pin=None)
+    speed_service = internet_speed_service or InternetSpeedService(
+        options.internet_speed_options,
+        runner=_run_demo_internet_speed if demo else None,
+    )
 
     class SpecterRequestHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -470,6 +514,9 @@ def build_handler(
                 }
                 self._send_json(payload)
                 return
+            if parsed.path == "/api/internet-speed":
+                self._send_json(speed_service.snapshot())
+                return
             if parsed.path.startswith("/static/"):
                 self._serve_static(parsed.path.removeprefix("/static/"))
                 return
@@ -477,6 +524,13 @@ def build_handler(
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+            if parsed.path == "/api/internet-speed":
+                started = speed_service.start()
+                self._send_json(
+                    speed_service.snapshot(),
+                    status=HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT,
+                )
+                return
             if parsed.path == "/api/wifi/scan":
                 if demo:
                     self._send_json(demo_state.wifi_payload())
@@ -592,6 +646,17 @@ def build_handler(
                 )
                 return
             self._send_json(payload)
+
+        def do_DELETE(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/internet-speed":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            cancelled = speed_service.cancel()
+            self._send_json(
+                speed_service.snapshot(),
+                status=HTTPStatus.ACCEPTED if cancelled else HTTPStatus.CONFLICT,
+            )
 
         def _read_json(self) -> dict | None:
             try:

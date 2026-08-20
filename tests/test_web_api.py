@@ -2,7 +2,7 @@ import json
 import unittest
 from http.server import ThreadingHTTPServer
 from threading import Thread
-from time import monotonic
+from time import monotonic, sleep
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -83,6 +83,30 @@ class WebApiTests(unittest.TestCase):
         status, triggered = self.request("/api/beeper/trigger", method="POST", payload={"pattern": "warning"})
         self.assertEqual(status, 200)
         self.assertIn("warning", triggered["patterns"])
+
+    def test_internet_speed_route_does_not_require_remote_entity(self):
+        self.demo_state.started_at = monotonic()
+
+        status, started = self.request("/api/internet-speed", method="POST")
+
+        self.assertEqual(status, 202)
+        self.assertEqual(started["request"]["status"], "running")
+        self.assertIn("connection capacity", started["configuration"]["data_usage"])
+
+        result = started
+        for _ in range(50):
+            status, result = self.request("/api/internet-speed")
+            if result["request"]["status"] != "running":
+                break
+            sleep(0.05)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["request"]["status"], "completed")
+        self.assertTrue(result["result"]["success"])
+        self.assertIsInstance(result["result"]["download_mbps"], float)
+        self.assertIsInstance(result["result"]["upload_mbps"], float)
+        self.assertIsInstance(result["result"]["ping_ms"], float)
+        self.assertIsInstance(result["result"]["jitter_ms"], float)
 
 
 if __name__ == "__main__":
