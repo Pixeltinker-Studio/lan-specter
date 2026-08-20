@@ -1,0 +1,77 @@
+name: Fehler melden
+description: Reproduzierbares Fehlverhalten in LAN Specter melden
+title: "[Bug]: "
+labels:
+  - bug
+  - triage
+projects:
+  - Pixeltinker-Studio/2
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für den Fehlerbericht. Entferne bitte Passwörter, Tokens, öffentliche IP-Adressen und andere sensible Daten aus Ausgaben und Screenshots.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Fehlerbeschreibung
+      description: Was ist passiert und welche Auswirkung hat der Fehler?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Schritte zum Reproduzieren
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+      description: Was hätte stattdessen passieren sollen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Umgebung
+      description: Hardware, Betriebssystem, LAN-Specter-Version oder Commit und relevante angeschlossene Geräte.
+      placeholder: |
+        Hardware: Raspberry Pi …
+        Betriebssystem: …
+        Version/Commit: …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Häufigkeit
+      options:
+        - Immer
+        - Häufig
+        - Gelegentlich
+        - Einmalig
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Protokolle und Screenshots
+      description: Relevante, bereinigte Ausgaben oder Bilder. Inhalte werden automatisch als Code formatiert, Markdown ist ebenfalls möglich.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Zusätzlicher Kontext
+      description: Bekannte Workarounds, Regressionen oder verwandte Issues.

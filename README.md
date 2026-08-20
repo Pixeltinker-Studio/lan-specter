@@ -4,6 +4,10 @@
 
 This first milestone intentionally contains no display, GPIO, touch, PoE, or hardware-specific TFT assumptions. The code builds a small CLI-driven diagnostic core that can later feed a TFT UI.
 
+## Planning and Issues
+
+Features, bugs, and technical tasks are tracked in the [LAN Specter project](https://github.com/orgs/Pixeltinker-Studio/projects/2). Please use the repository's issue forms when adding new work.
+
 ## MVP Scope
 
 - Detect a Linux network interface

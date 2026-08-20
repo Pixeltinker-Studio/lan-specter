@@ -1,0 +1,49 @@
+name: Technische Aufgabe
+description: Wartung, Refactoring, Dokumentation oder technische Schulden erfassen
+title: "[Task]: "
+labels:
+  - technical-task
+  - triage
+projects:
+  - Pixeltinker-Studio/2
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Ziel
+      description: Welches technische Ergebnis soll erreicht werden und warum ist es sinnvoll?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Umfang
+      description: Was gehört ausdrücklich zu dieser Aufgabe?
+      placeholder: |
+        - …
+        - …
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Nicht Bestandteil
+      description: Optional – welche naheliegenden Arbeiten werden bewusst nicht erledigt?
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Fertig, wenn
+      placeholder: |
+        - [ ] …
+        - [ ] Tests oder Dokumentation sind aktualisiert
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Zusätzlicher Kontext
+      description: Abhängigkeiten, Risiken, relevante Dateien oder verwandte Issues.

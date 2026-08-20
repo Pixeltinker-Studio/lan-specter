@@ -1,0 +1,54 @@
+name: Feature vorschlagen
+description: Eine neue Funktion oder eine fachliche Verbesserung vorschlagen
+title: "[Feature]: "
+labels:
+  - feature
+  - triage
+projects:
+  - Pixeltinker-Studio/2
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für den Vorschlag. Bitte beschreibe vor allem das Problem und das gewünschte Ergebnis; die technische Lösung kann anschließend gemeinsam entstehen.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Ausgangssituation und Problem
+      description: Welches konkrete Problem soll gelöst werden und für wen?
+      placeholder: Wenn ich …, dann …
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Gewünschtes Ergebnis
+      description: Was soll nach der Umsetzung möglich oder sichtbar sein?
+      placeholder: Das System soll …
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Akzeptanzkriterien
+      description: Woran erkennen wir eindeutig, dass das Feature fertig ist?
+      placeholder: |
+        - [ ] …
+        - [ ] …
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Lösungsidee
+      description: Optional – gibt es bereits eine bevorzugte Umsetzung oder Bedienung?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Zusätzlicher Kontext
+      description: Mockups, Screenshots, Geräteabhängigkeiten, Links oder verwandte Issues.
