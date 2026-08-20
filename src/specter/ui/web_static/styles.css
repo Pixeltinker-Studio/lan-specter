@@ -264,7 +264,8 @@ button:disabled {
 .ready-layout,
 .analysis-layout,
 .result-layout,
-.menu-layout {
+.menu-layout,
+.wifi-layout {
   display: grid;
   grid-template-columns: 1.15fr 0.85fr;
   gap: 24px;
@@ -282,6 +283,10 @@ button:disabled {
 
 .menu-layout {
   grid-template-columns: 1fr 270px;
+}
+
+.wifi-layout {
+  grid-template-columns: 1fr 290px;
 }
 
 .panel {
@@ -632,6 +637,106 @@ button:disabled {
   background: rgba(156, 213, 139, 0.12);
 }
 
+.wifi-panel {
+  overflow: hidden;
+}
+
+.wifi-list {
+  display: grid;
+  gap: 7px;
+  max-height: 410px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.wifi-row {
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) 120px 150px;
+  align-items: center;
+  gap: 14px;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  background: rgba(3, 5, 5, 0.34);
+}
+
+.wifi-row.connected {
+  border-color: var(--green);
+  background: rgba(156, 213, 139, 0.08);
+}
+
+.wifi-identity {
+  min-width: 0;
+}
+
+.wifi-identity strong,
+.wifi-identity span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wifi-identity strong {
+  color: var(--text);
+  font-size: 17px;
+}
+
+.wifi-identity span,
+.wifi-security {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.wifi-signal {
+  position: relative;
+  height: 30px;
+  border: 1px solid var(--line);
+  background: var(--black);
+  overflow: hidden;
+}
+
+.wifi-signal > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(156, 213, 139, 0.32);
+}
+
+.wifi-signal strong {
+  position: relative;
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.wifi-controls {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.wifi-controls .action {
+  min-height: 58px;
+  font-size: 17px;
+}
+
+.wifi-empty,
+.inline-error {
+  border: 1px solid var(--line-soft);
+  padding: 20px;
+  color: var(--muted);
+}
+
+.inline-error {
+  margin-bottom: 10px;
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(216, 111, 97, 0.08);
+}
+
 .echo-panel {
   min-height: 88px;
   border: 1px solid var(--line-soft);
@@ -885,6 +990,7 @@ button:disabled {
   .analysis-layout,
   .result-layout,
   .menu-layout,
+  .wifi-layout,
   .boot,
   .fault-layout {
     grid-template-columns: 1fr;

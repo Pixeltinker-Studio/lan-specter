@@ -10,7 +10,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from math import sin
-from threading import Condition
+from threading import Condition, Lock
 from time import monotonic
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
@@ -19,6 +19,7 @@ from specter.core.diagnostics import ScanOptions, run_scan
 from specter.core.results import DiagnosticsResult
 from specter.core.serialization import to_jsonable
 from specter.network.discovery import DEFAULT_REMOTE_HOSTNAME, detect_remote
+from specter.network.wifi import read_wifi_status, set_wifi_radio
 
 
 STATIC_PACKAGE = "specter.ui.web_static"
@@ -36,12 +37,14 @@ class WebUiOptions:
     interface: str | None = None
     iperf_seconds: int = 5
     iperf_port: int = 5201
+    wifi_interface: str | None = None
 
 
 @dataclass
 class DemoState:
     started_at: float = field(default_factory=monotonic)
     analysis_runs: int = 0
+    wifi_enabled: bool = True
 
     def payload(self, *, full_analysis: bool) -> dict:
         elapsed = monotonic() - self.started_at
@@ -111,6 +114,49 @@ class DemoState:
             "echo": {
                 "remote_ping": _demo_ping("specter-re01.local", reachable, _demo_latency(elapsed)),
             },
+        }
+
+    def wifi_payload(self) -> dict:
+        elapsed = monotonic() - self.started_at
+        signal = max(1, min(100, round(74 + sin(elapsed * 0.65) * 9)))
+        return {
+            "wifi": {
+                "interface": "wlan0",
+                "adapter_available": True,
+                "radio_enabled": self.wifi_enabled,
+                "device_state": "connected" if self.wifi_enabled else "unavailable",
+                "connection": "SPECTER LAB" if self.wifi_enabled else None,
+                "scanned_at": _utc_now() if self.wifi_enabled else None,
+                "error": None,
+                "access_points": (
+                    [
+                        {
+                            "bssid": "02:00:00:00:00:01",
+                            "ssid": "SPECTER LAB",
+                            "mode": "Infra",
+                            "channel": 36,
+                            "frequency_mhz": 5180,
+                            "signal_percent": signal,
+                            "security": "WPA2 WPA3",
+                            "in_use": True,
+                            "band": "5 GHz",
+                        },
+                        {
+                            "bssid": "02:00:00:00:00:02",
+                            "ssid": "FIELD-NET",
+                            "mode": "Infra",
+                            "channel": 6,
+                            "frequency_mhz": 2437,
+                            "signal_percent": 48,
+                            "security": "WPA2",
+                            "in_use": False,
+                            "band": "2.4 GHz",
+                        },
+                    ]
+                    if self.wifi_enabled
+                    else []
+                ),
+            }
         }
 
 
@@ -284,6 +330,7 @@ def build_handler(
             full_analysis=full_analysis,
         )
     )
+    wifi_lock = Lock()
 
     class SpecterRequestHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -297,6 +344,14 @@ def build_handler(
             if parsed.path == "/api/echo":
                 self._send_json(build_echo_payload(options=options, demo=demo, demo_state=demo_state))
                 return
+            if parsed.path == "/api/wifi":
+                if demo:
+                    self._send_json(demo_state.wifi_payload())
+                else:
+                    with wifi_lock:
+                        status = read_wifi_status(interface=options.wifi_interface, rescan=False)
+                    self._send_json({"wifi": to_jsonable(status)})
+                return
             if parsed.path.startswith("/static/"):
                 self._serve_static(parsed.path.removeprefix("/static/"))
                 return
@@ -304,6 +359,35 @@ def build_handler(
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+            if parsed.path == "/api/wifi/scan":
+                if demo:
+                    self._send_json(demo_state.wifi_payload())
+                else:
+                    with wifi_lock:
+                        status = read_wifi_status(interface=options.wifi_interface, rescan=True)
+                    self._send_json({"wifi": to_jsonable(status)})
+                return
+            if parsed.path == "/api/wifi/radio":
+                request = self._read_json()
+                if request is None or not isinstance(request.get("enabled"), bool):
+                    self._send_json(
+                        {"error": "Expected JSON object with boolean 'enabled'"},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                if demo:
+                    demo_state.wifi_enabled = request["enabled"]
+                    self._send_json(demo_state.wifi_payload())
+                else:
+                    with wifi_lock:
+                        change_error = set_wifi_radio(request["enabled"])
+                        status = read_wifi_status(interface=options.wifi_interface, rescan=False)
+                    response_status = HTTPStatus.OK if change_error is None else HTTPStatus.CONFLICT
+                    self._send_json(
+                        {"wifi": to_jsonable(status), "error": change_error},
+                        status=response_status,
+                    )
+                return
             if parsed.path != "/api/scan":
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
@@ -325,6 +409,19 @@ def build_handler(
                 )
                 return
             self._send_json(payload)
+
+        def _read_json(self) -> dict | None:
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return None
+            if content_length <= 0 or content_length > 4096:
+                return None
+            try:
+                payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return None
+            return payload if isinstance(payload, dict) else None
 
         def log_message(self, format: str, *args: object) -> None:
             return

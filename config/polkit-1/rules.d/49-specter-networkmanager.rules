@@ -1,0 +1,10 @@
+polkit.addRule(function (action, subject) {
+    const allowedActions = [
+        "org.freedesktop.NetworkManager.enable-disable-wifi",
+        "org.freedesktop.NetworkManager.wifi.scan"
+    ];
+
+    if (subject.user === "specter" && allowedActions.indexOf(action.id) !== -1) {
+        return polkit.Result.YES;
+    }
+});

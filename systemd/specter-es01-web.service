@@ -1,6 +1,6 @@
 [Unit]
 Description=SPECTER ES-01 local web UI
-After=network-online.target
+After=network-online.target NetworkManager.service
 Wants=network-online.target
 
 [Service]

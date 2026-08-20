@@ -19,6 +19,9 @@ const uiState = {
   scanFullAnalysis: false,
   scanRequestId: 0,
   screensaverActive: false,
+  wifi: null,
+  wifiError: null,
+  wifiConfirmOff: false,
 };
 let analysisProgressTimer = null;
 let screensaverTimer = null;
@@ -31,6 +34,15 @@ function setClock() {
 
 function value(path, fallback = null) {
   return path.reduce((current, key) => current && current[key] !== undefined ? current[key] : null, uiState.latestPayload) ?? fallback;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function scan() {
@@ -120,7 +132,8 @@ function setOperation(operation) {
 function applyControlState() {
   const busy = uiState.operation !== "idle";
   document.querySelectorAll("button").forEach((button) => {
-    button.disabled = busy;
+    const requiresWifi = button.dataset.requiresWifi === "true";
+    button.disabled = busy || (requiresWifi && uiState.wifi?.radio_enabled !== true);
     button.setAttribute("aria-busy", busy ? "true" : "false");
   });
 }
@@ -134,6 +147,7 @@ function updateFooter() {
     uiState.activeView === "analysis" ? "ANALYSIS" :
     uiState.activeView === "result" ? "RESULT" :
     uiState.activeView === "menu" ? "MENU" :
+    uiState.activeView === "wifi" ? "WLAN" :
     uiState.activeView === "info" ? "INFO" :
     uiState.activeView === "boot" ? "BOOT" :
     uiState.activeView === "screensaver" ? "STANDBY" :
@@ -279,6 +293,11 @@ function menuScreen() {
             <strong>DIAGNOSTICS</strong>
             <em>Technical register view</em>
           </button>
+          <button class="menu-tile" type="button" data-action="wifi">
+            <span>05</span>
+            <strong>WLAN SPECTRUM</strong>
+            <em>Radio state and nearby fields</em>
+          </button>
         </div>
       </section>
       <aside class="panel panel-compact">
@@ -369,6 +388,133 @@ function diagnosticsScreen() {
       </aside>
     </div>
   `;
+}
+
+function wifiScreen() {
+  setActiveView("wifi");
+  const wifi = uiState.wifi;
+  const radioText = wifi?.radio_enabled === true ? "ENABLED" : wifi?.radio_enabled === false ? "DISABLED" : "UNKNOWN";
+  const radioClass = wifi?.radio_enabled === true ? "" : "anomaly";
+  const accessPoints = wifi?.access_points ?? [];
+  const rows = accessPoints.length
+    ? accessPoints.slice(0, 10).map((accessPoint) => {
+      const signal = accessPoint.signal_percent;
+      const signalText = signal === null || signal === undefined ? "--" : `${signal}%`;
+      const identity = accessPoint.ssid || "<HIDDEN SSID>";
+      return `
+        <div class="wifi-row ${accessPoint.in_use ? "connected" : ""}">
+          <div class="wifi-identity">
+            <strong>${escapeHtml(identity)}</strong>
+            <span>${escapeHtml(accessPoint.bssid)} · ${escapeHtml(accessPoint.band ?? "unknown band")} · CH ${escapeHtml(accessPoint.channel ?? "--")}</span>
+          </div>
+          <div class="wifi-security">${escapeHtml(accessPoint.security || "OPEN")}</div>
+          <div class="wifi-signal" aria-label="Signal ${escapeHtml(signalText)}">
+            <span style="width: ${signal ?? 0}%"></span>
+            <strong>${escapeHtml(signalText)}</strong>
+          </div>
+        </div>
+      `;
+    }).join("")
+    : `<div class="wifi-empty">${wifi ? "NO ACCESS POINTS MEASURED" : "READING WLAN INSTRUMENT..."}</div>`;
+  const error = uiState.wifiError || wifi?.error;
+  const toggleLabel = wifi?.radio_enabled === true
+    ? (uiState.wifiConfirmOff ? "CONFIRM WIFI OFF" : "TURN WIFI OFF")
+    : "TURN WIFI ON";
+  const toggleButton = wifi?.adapter_available || wifi?.radio_enabled !== null
+    ? `<button class="action secondary" type="button" data-action="wifi-toggle">${toggleLabel}</button>`
+    : "";
+
+  screen.innerHTML = `
+    <div class="wifi-layout">
+      <section class="panel wifi-panel">
+        <div class="panel-heading">
+          <span class="section-code">RADIO FIELD SURVEY / ${escapeHtml(wifi?.interface ?? "NO ADAPTER")}</span>
+          <h2 class="screen-title">WLAN SPECTRUM</h2>
+        </div>
+        ${error ? `<div class="inline-error">${escapeHtml(error)}</div>` : ""}
+        <div class="wifi-list">${rows}</div>
+      </section>
+      <aside class="panel panel-compact wifi-controls">
+        <div class="condition ${radioClass}">
+          <span class="label">RADIO STATE</span>
+          <strong>${radioText}</strong>
+        </div>
+        <div class="readout">
+          <span>CONNECTION</span>
+          <strong>${escapeHtml(wifi?.connection ?? "NOT CONNECTED")}</strong>
+        </div>
+        <div class="readout">
+          <span>MEASURED FIELDS</span>
+          <strong>${accessPoints.length}</strong>
+        </div>
+        <button class="action" type="button" data-action="wifi-rescan" data-requires-wifi="true">RESCAN</button>
+        ${toggleButton}
+        <button class="action secondary" type="button" data-action="menu">RETURN TO MENU</button>
+      </aside>
+    </div>
+  `;
+  applyControlState();
+}
+
+async function requestWifi({ rescan = false } = {}) {
+  if (uiState.operation !== "idle") return;
+  setOperation("wifi");
+  uiState.wifiError = null;
+  try {
+    const response = await fetch(rescan ? "/api/wifi/scan" : "/api/wifi", {
+      method: rescan ? "POST" : "GET",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await response.json();
+    uiState.wifi = payload.wifi ?? null;
+    if (!response.ok) uiState.wifiError = payload.error ?? `WLAN request failed (${response.status})`;
+  } catch (error) {
+    uiState.wifiError = error instanceof Error ? error.message : "WLAN request failed";
+  } finally {
+    setOperation("idle");
+    wifiScreen();
+  }
+}
+
+async function setWifiRadio(enabled) {
+  if (uiState.operation !== "idle") return;
+  setOperation("wifi");
+  uiState.wifiError = null;
+  try {
+    const response = await fetch("/api/wifi/radio", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    const payload = await response.json();
+    uiState.wifi = payload.wifi ?? uiState.wifi;
+    if (!response.ok) uiState.wifiError = payload.error ?? `WLAN change failed (${response.status})`;
+  } catch (error) {
+    uiState.wifiError = error instanceof Error ? error.message : "WLAN change failed";
+  } finally {
+    uiState.wifiConfirmOff = false;
+    setOperation("idle");
+    wifiScreen();
+  }
+}
+
+function toggleWifiRadio() {
+  if (!uiState.wifi) return;
+  if (uiState.wifi.radio_enabled === true && !uiState.wifiConfirmOff) {
+    uiState.wifiConfirmOff = true;
+    wifiScreen();
+    return;
+  }
+  setWifiRadio(uiState.wifi.radio_enabled !== true);
+}
+
+function openWifiScreen() {
+  if (uiState.operation !== "idle") return;
+  uiState.wifiConfirmOff = false;
+  wifiScreen();
+  requestWifi();
 }
 
 function analysisScreen() {
@@ -646,6 +792,12 @@ screen.addEventListener("click", (event) => {
     menuScreen();
   } else if (button.dataset.action === "diagnostics") {
     diagnosticsScreen();
+  } else if (button.dataset.action === "wifi") {
+    openWifiScreen();
+  } else if (button.dataset.action === "wifi-rescan") {
+    requestWifi({ rescan: true });
+  } else if (button.dataset.action === "wifi-toggle") {
+    toggleWifiRadio();
   }
 });
 

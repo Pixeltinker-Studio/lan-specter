@@ -23,7 +23,7 @@ Install the expected system tools on both Raspberry Pis:
 
 ```bash
 sudo apt update
-sudo apt install iperf3 ethtool lldpd python3-pip python3-venv git avahi-daemon libnss-mdns
+sudo apt install iperf3 ethtool lldpd network-manager python3-pip python3-venv git avahi-daemon libnss-mdns
 ```
 
 Set the hostnames:
@@ -125,9 +125,14 @@ Optional server autostart:
 
 ```bash
 sudo cp systemd/specter-es01-web.service /etc/systemd/system/
+sudo cp config/polkit-1/rules.d/49-specter-networkmanager.rules /etc/polkit-1/rules.d/
+sudo chown root:root /etc/polkit-1/rules.d/49-specter-networkmanager.rules
+sudo chmod 0644 /etc/polkit-1/rules.d/49-specter-networkmanager.rules
 sudo systemctl daemon-reload
 sudo systemctl enable --now specter-es01-web.service
 ```
+
+The Polkit rule grants the `specter` service user only the NetworkManager permissions needed to scan for Wi-Fi access points and switch the Wi-Fi radio. It does not grant general root command execution.
 
 ### Raspberry Pi OS Lite Kiosk
 
@@ -171,6 +176,9 @@ Enable the SPECTER web server and HDMI kiosk:
 cd ~/lan-specter
 sudo cp systemd/specter-es01-web.service /etc/systemd/system/
 sudo cp systemd/specter-es01-kiosk.service /etc/systemd/system/
+sudo cp config/polkit-1/rules.d/49-specter-networkmanager.rules /etc/polkit-1/rules.d/
+sudo chown root:root /etc/polkit-1/rules.d/49-specter-networkmanager.rules
+sudo chmod 0644 /etc/polkit-1/rules.d/49-specter-networkmanager.rules
 sudo systemctl daemon-reload
 sudo systemctl disable --now specter-es01-dashboard.service
 sudo systemctl enable --now specter-es01-web.service
