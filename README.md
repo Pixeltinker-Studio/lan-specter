@@ -4,6 +4,8 @@
 
 The ES-01 uses the Raspberry Pi 5 as its fixed target platform. The HDMI UI is designed for the Waveshare 7-inch display at 1024x600 in landscape orientation and is operated by capacitive touch.
 
+Reference captures of the main interface states are available in the [SPECTER UI screenshot gallery](docs/screenshots/README.md).
+
 ## Target Platform
 
 - Raspberry Pi 5
