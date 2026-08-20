@@ -1413,21 +1413,6 @@ button[aria-busy="true"] {
   stroke: rgba(135, 199, 197, 0.74);
 }
 
-.tunnel-rails path {
-  fill: none;
-  stroke: rgba(135, 199, 197, 0.42);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.tunnel-core rect,
-.tunnel-core path {
-  fill: none;
-  stroke: rgba(215, 179, 95, 0.76);
-  stroke-width: 1.2;
-  vector-effect: non-scaling-stroke;
-}
-
 .containment-target {
   filter: url("#containment-glow");
 }

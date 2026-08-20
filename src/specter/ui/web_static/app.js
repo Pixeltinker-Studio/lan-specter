@@ -1343,28 +1343,21 @@ function screensaverScreen() {
             <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
           </filter>
         </defs>
-        <g class="tunnel-rails">
-          <path></path><path></path><path></path><path></path>
-        </g>
         <g class="tunnel-frames">
-          ${Array.from({ length: 16 }, (_, index) => `<rect data-frame="${index}" x="-50" y="-50" width="100" height="100"></rect>`).join("")}
-        </g>
-        <g class="tunnel-core" aria-hidden="true">
-          <rect x="-9" y="-9" width="18" height="18"></rect>
-          <path d="M -18 0 H 18 M 0 -18 V 18"></path>
+          ${Array.from({ length: 8 }, (_, index) => `<rect data-frame="${index}" x="-50" y="-50" width="100" height="100"></rect>`).join("")}
         </g>
         <g class="containment-target" aria-hidden="true">
-          <circle r="27"></circle>
+          <circle data-speed-ring r="27"></circle>
           <path class="target-cross" d="M -38 0 H 38 M 0 -38 V 38"></path>
           <path class="target-mark" d="M 0 -14 L 13 11 L -13 11 Z"></path>
         </g>
         <g class="tunnel-label tunnel-array-label">
           <text>PASSIVE CONTAINMENT / ARRAY 12</text>
-          <text y="15">TRAIL COHERENCE ACTIVE</text>
+          <text y="15" data-lock-readout>ENTITY ACQUISITION</text>
         </g>
         <g class="tunnel-label tunnel-target-label">
           <text>ENTITY VECTOR / CH-07</text>
-          <text y="15" data-vector-readout>000 / 000</text>
+          <text y="15" data-vector-readout>VECTOR RATE 000 px/s</text>
         </g>
       </svg>
     </div>
@@ -1384,29 +1377,49 @@ function startScreensaverAnimation() {
   const svg = screen.querySelector(".containment-tunnel");
   if (!svg) return;
   const frames = [...svg.querySelectorAll("[data-frame]")];
-  const rails = [...svg.querySelectorAll(".tunnel-rails path")];
-  const core = svg.querySelector(".tunnel-core");
   const target = svg.querySelector(".containment-target");
+  const targetRing = svg.querySelector("[data-speed-ring]");
+  const targetCross = svg.querySelector(".target-cross");
   const arrayLabel = svg.querySelector(".tunnel-array-label");
   const targetLabel = svg.querySelector(".tunnel-target-label");
+  const lockReadout = svg.querySelector("[data-lock-readout]");
   const vectorReadout = svg.querySelector("[data-vector-readout]");
   const startedAt = performance.now();
   let lastRenderedAt = 0;
+  let lastTickAt = startedAt;
+  let lockAmount = 0;
+  let captureSeconds = 0;
+  let escapeUntil = 0;
+  let escapeCooldownUntil = 0;
+  let waypointIndex = 0;
+
+  const waypoints = [
+    { x: 790, y: 122 },
+    { x: 884, y: 448 },
+    { x: 574, y: 512 },
+    { x: 166, y: 432 },
+    { x: 132, y: 142 },
+    { x: 494, y: 86 },
+    { x: 704, y: 326 },
+    { x: 342, y: 294 },
+  ];
+  const targetState = { x: 268, y: 168, vx: 52, vy: 18 };
+  const chaserState = { x: 724, y: 414, vx: -44, vy: -16 };
+  const history = Array.from({ length: 96 }, (_, index) => ({
+    x: Math.min(940, chaserState.x + index * 2.3),
+    y: Math.min(532, chaserState.y + index * 1.05),
+  }));
 
   const clamp = (number, minimum, maximum) => Math.max(minimum, Math.min(maximum, number));
-  const trajectory = (seconds) => ({
-    x: clamp(512 + Math.sin(seconds * 0.61) * 300 + Math.sin(seconds * 1.37) * 72, 82, 942),
-    y: clamp(300 + Math.cos(seconds * 0.47) * 174 + Math.sin(seconds * 1.09) * 58, 74, 526),
-  });
-  const corners = (point, size, angleDegrees) => {
-    const angle = angleDegrees * Math.PI / 180;
-    const cosine = Math.cos(angle);
-    const sine = Math.sin(angle);
-    const half = size / 2;
-    return [[-half, -half], [half, -half], [half, half], [-half, half]].map(([x, y]) => ({
-      x: point.x + x * cosine - y * sine,
-      y: point.y + x * sine + y * cosine,
-    }));
+  const length = (x, y) => Math.hypot(x, y);
+  const sampleHistory = (index) => {
+    const lowerIndex = Math.min(history.length - 1, Math.floor(index));
+    const upperIndex = Math.min(history.length - 1, lowerIndex + 1);
+    const fraction = index - lowerIndex;
+    return {
+      x: history[lowerIndex].x + (history[upperIndex].x - history[lowerIndex].x) * fraction,
+      y: history[lowerIndex].y + (history[upperIndex].y - history[lowerIndex].y) * fraction,
+    };
   };
 
   const animate = (now) => {
@@ -1419,46 +1432,100 @@ function startScreensaverAnimation() {
       return;
     }
     lastRenderedAt = now;
+    const deltaSeconds = clamp((now - lastTickAt) / 1000, 0.001, 0.08);
+    lastTickAt = now;
     const seconds = (now - startedAt) / 1000 + 5.4;
-    const geometry = frames.map((frame, index) => {
-      const age = 0.62 + index * 0.145;
-      const point = trajectory(seconds - age);
-      const size = 70 + index * 5.8 + Math.sin(seconds * 0.92 - index * 0.46) * 12;
-      const angle = seconds * (14 + (index % 4) * 2.4) + index * 9.5
-        + Math.sin(seconds * 0.7 - index * 0.31) * 24;
+
+    let waypoint = waypoints[waypointIndex];
+    let targetToWaypointX = waypoint.x - targetState.x;
+    let targetToWaypointY = waypoint.y - targetState.y;
+    let targetToWaypointDistance = length(targetToWaypointX, targetToWaypointY);
+    if (targetToWaypointDistance < 46) {
+      waypointIndex = (waypointIndex + 1) % waypoints.length;
+      waypoint = waypoints[waypointIndex];
+      targetToWaypointX = waypoint.x - targetState.x;
+      targetToWaypointY = waypoint.y - targetState.y;
+      targetToWaypointDistance = length(targetToWaypointX, targetToWaypointY);
+    }
+
+    const escaping = now < escapeUntil;
+    const desiredTargetSpeed = escaping ? 350 : 72;
+    const targetSteering = escaping ? 5.6 : 1.8;
+    const desiredTargetVx = targetToWaypointX / Math.max(1, targetToWaypointDistance) * desiredTargetSpeed;
+    const desiredTargetVy = targetToWaypointY / Math.max(1, targetToWaypointDistance) * desiredTargetSpeed;
+    const targetBlend = Math.min(1, targetSteering * deltaSeconds);
+    targetState.vx += (desiredTargetVx - targetState.vx) * targetBlend;
+    targetState.vy += (desiredTargetVy - targetState.vy) * targetBlend;
+    targetState.x = clamp(targetState.x + targetState.vx * deltaSeconds, 72, 952);
+    targetState.y = clamp(targetState.y + targetState.vy * deltaSeconds, 68, 532);
+
+    const chaseX = targetState.x - chaserState.x;
+    const chaseY = targetState.y - chaserState.y;
+    const chaseDistance = length(chaseX, chaseY);
+    const desiredChaserSpeed = clamp(chaseDistance * 1.28, 36, 238);
+    const desiredChaserVx = chaseX / Math.max(1, chaseDistance) * desiredChaserSpeed;
+    const desiredChaserVy = chaseY / Math.max(1, chaseDistance) * desiredChaserSpeed;
+    const chaserBlend = Math.min(1, 3.3 * deltaSeconds);
+    chaserState.vx += (desiredChaserVx - chaserState.vx) * chaserBlend;
+    chaserState.vy += (desiredChaserVy - chaserState.vy) * chaserBlend;
+    chaserState.x = clamp(chaserState.x + chaserState.vx * deltaSeconds, 58, 966);
+    chaserState.y = clamp(chaserState.y + chaserState.vy * deltaSeconds, 54, 546);
+
+    const lockTarget = clamp(1 - chaseDistance / 112, 0, 1);
+    lockAmount += (lockTarget - lockAmount) * Math.min(1, deltaSeconds * 3.2);
+    if (!escaping && chaseDistance < 48 && now >= escapeCooldownUntil) {
+      captureSeconds += deltaSeconds;
+      if (captureSeconds > 1.15) {
+        waypointIndex = (waypointIndex + 3) % waypoints.length;
+        escapeUntil = now + 1650;
+        escapeCooldownUntil = now + 5200;
+        captureSeconds = 0;
+      }
+    } else {
+      captureSeconds = Math.max(0, captureSeconds - deltaSeconds * 1.8);
+    }
+
+    history.unshift({ x: chaserState.x, y: chaserState.y });
+    if (history.length > 96) history.pop();
+    const delayStep = 0.38 + (1 - lockAmount) * 3.45;
+    const frameGeometry = frames.map((frame, index) => {
+      const point = sampleHistory(index * delayStep);
+      const distanceToTarget = length(targetState.x - point.x, targetState.y - point.y);
+      const size = clamp(38 + distanceToTarget * 0.27, 38, 164);
+      const angle = seconds * (17 + (index % 3) * 4.1) + index * 17
+        + Math.sin(seconds * 0.73 - index * 0.42) * 19;
       frame.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) rotate(${angle.toFixed(2)})`);
       frame.setAttribute("x", (-size / 2).toFixed(2));
       frame.setAttribute("y", (-size / 2).toFixed(2));
       frame.setAttribute("width", size.toFixed(2));
       frame.setAttribute("height", size.toFixed(2));
-      frame.style.opacity = String(0.96 - index * 0.035);
-      return { point, angle, corners: corners(point, size, angle) };
+      frame.style.opacity = String(0.94 - index * 0.055);
+      return point;
     });
 
-    rails.forEach((rail, cornerIndex) => {
-      const points = geometry.map((frame) => frame.corners[cornerIndex]);
-      rail.setAttribute("d", points.map((point, index) => `${index ? "L" : "M"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" "));
-    });
+    const targetSpeed = length(targetState.vx, targetState.vy);
+    const targetHeading = Math.atan2(targetState.vy, targetState.vx) * 180 / Math.PI + 90;
+    const ringRadius = clamp(22 + targetSpeed * 0.16, 24, 78);
+    const crossExtent = ringRadius + 10;
+    target.setAttribute("transform", `translate(${targetState.x.toFixed(2)} ${targetState.y.toFixed(2)}) rotate(${targetHeading.toFixed(2)})`);
+    targetRing.setAttribute("r", ringRadius.toFixed(2));
+    targetCross.setAttribute("d", `M ${-crossExtent.toFixed(1)} 0 H ${crossExtent.toFixed(1)} M 0 ${-crossExtent.toFixed(1)} V ${crossExtent.toFixed(1)}`);
 
-    const lead = geometry[0];
-    core.setAttribute("transform", `translate(${lead.point.x.toFixed(2)} ${lead.point.y.toFixed(2)}) rotate(${(lead.angle * -0.55).toFixed(2)})`);
-    const targetPoint = trajectory(seconds);
-    const targetHeading = Math.atan2(
-      trajectory(seconds + 0.02).y - targetPoint.y,
-      trajectory(seconds + 0.02).x - targetPoint.x,
-    ) * 180 / Math.PI + 90;
-    target.setAttribute("transform", `translate(${targetPoint.x.toFixed(2)} ${targetPoint.y.toFixed(2)}) rotate(${targetHeading.toFixed(2)})`);
-
-    const labelAnchor = geometry[Math.min(8, geometry.length - 1)].point;
+    const labelAnchor = frameGeometry[Math.min(5, frameGeometry.length - 1)];
     arrayLabel.setAttribute(
       "transform",
       `translate(${clamp(labelAnchor.x + 42, 24, 744).toFixed(1)} ${clamp(labelAnchor.y - 38, 28, 552).toFixed(1)})`,
     );
     targetLabel.setAttribute(
       "transform",
-      `translate(${clamp(targetPoint.x + 34, 24, 814).toFixed(1)} ${clamp(targetPoint.y + 45, 38, 550).toFixed(1)})`,
+      `translate(${clamp(targetState.x + ringRadius + 18, 24, 814).toFixed(1)} ${clamp(targetState.y + ringRadius + 14, 38, 550).toFixed(1)})`,
     );
-    vectorReadout.textContent = `${String(Math.round(targetPoint.x)).padStart(3, "0")} / ${String(Math.round(targetPoint.y)).padStart(3, "0")}`;
+    lockReadout.textContent = escaping
+      ? "FIELD LOCK COLLAPSE"
+      : lockAmount > 0.72
+        ? "FIELD LOCK ACQUIRED"
+        : "ENTITY ACQUISITION";
+    vectorReadout.textContent = `VECTOR RATE ${String(Math.round(targetSpeed)).padStart(3, "0")} px/s`;
     screensaverAnimationFrame = requestAnimationFrame(animate);
   };
 

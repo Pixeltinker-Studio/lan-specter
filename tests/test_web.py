@@ -15,15 +15,18 @@ class WebUiTests(unittest.TestCase):
         self.assertIn("EXTERNAL CAPACITY", menu_source)
         self.assertNotIn('data-action="beeper"', menu_source)
 
-    def test_screensaver_uses_a_moving_connected_tunnel(self):
+    def test_screensaver_uses_distance_reactive_unconnected_frames(self):
         source = files("specter.ui.web_static").joinpath("app.js").read_text(encoding="utf-8")
         screensaver_source = source[
             source.index("function screensaverScreen()") : source.index("function animateAnalysisProgress()")
         ]
 
         self.assertIn('class="containment-tunnel"', screensaver_source)
-        self.assertIn('class="tunnel-rails"', screensaver_source)
+        self.assertIn("Array.from({ length: 8 }", screensaver_source)
         self.assertIn("requestAnimationFrame", screensaver_source)
+        self.assertIn("distanceToTarget * 0.27", screensaver_source)
+        self.assertIn("targetSpeed * 0.16", screensaver_source)
+        self.assertNotIn('class="tunnel-rails"', screensaver_source)
         self.assertNotIn('class="containment-grid"', screensaver_source)
         self.assertNotIn('class="screensaver-readout"', screensaver_source)
 

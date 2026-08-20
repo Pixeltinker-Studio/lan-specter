@@ -47,7 +47,7 @@ SCREENS = (
     Screen("external-complete", "14-external-analysis-complete.jpg", 2500),
     Screen("diagnostics", "15-diagnostics.jpg"),
     Screen("acoustic", "16-acoustic-signals.jpg"),
-    Screen("standby", "17-standby-containment.jpg", 450, False),
+    Screen("standby", "17-standby-containment.jpg", 650, False),
 )
 SCREEN_BY_NAME = {screen.name: screen for screen in SCREENS}
 
