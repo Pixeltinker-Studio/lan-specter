@@ -255,7 +255,7 @@ function scheduleBluetoothBeeper() {
 
 function updateSonarSignal(sonar, signalLevel) {
   if (!sonar) return;
-  sonar.style.setProperty("--signal-level", `${Math.round(signalLevel * 100)}%`);
+  sonar.style.setProperty("--signal-level", `${Math.round((1 - signalLevel) * 100)}%`);
 }
 
 function pulseBluetoothSonar(intervalMs) {
