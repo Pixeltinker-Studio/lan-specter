@@ -14,6 +14,8 @@ const BLUETOOTH_REFRESH_MS = Number(params.get("bluetooth")) || 1000;
 const BLUETOOTH_BEEP_MIN_MS = 180;
 const BLUETOOTH_BEEP_MAX_MS = 1800;
 const BLUETOOTH_TARGET_MAX_AGE_SECONDS = 3;
+const SONAR_BASE_DURATION_SECONDS = 1.8;
+const SONAR_SPEED_TRANSITION_MS = 500;
 
 const uiState = {
   latestPayload: null,
@@ -250,6 +252,35 @@ function scheduleBluetoothBeeper() {
     triggerBeeper("scan_tick");
     scheduleBluetoothBeeper();
   }, bluetoothBeepIntervalMs(target.smoothed_rssi));
+}
+
+function updateSonarVisual(sonar, pulseDuration, signalLevel) {
+  if (!sonar) return;
+  sonar.style.setProperty("--signal-level", `${Math.round(signalLevel * 100)}%`);
+
+  const animations = [...sonar.querySelectorAll("span")]
+    .flatMap((ring) => typeof ring.getAnimations === "function" ? ring.getAnimations() : []);
+  if (!animations.length) {
+    sonar.style.setProperty("--pulse-duration", `${pulseDuration}s`);
+    return;
+  }
+
+  const targetRate = SONAR_BASE_DURATION_SECONDS / pulseDuration;
+  const initialRate = Number(sonar.dataset.playbackRate) || animations[0].playbackRate || 1;
+  const transitionId = String((Number(sonar.dataset.transitionId) || 0) + 1);
+  const startedAt = performance.now();
+  sonar.dataset.transitionId = transitionId;
+
+  const updateRate = (now) => {
+    if (sonar.dataset.transitionId !== transitionId) return;
+    const progress = Math.min(1, (now - startedAt) / SONAR_SPEED_TRANSITION_MS);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const rate = initialRate + ((targetRate - initialRate) * eased);
+    animations.forEach((animation) => animation.updatePlaybackRate(rate));
+    sonar.dataset.playbackRate = String(rate);
+    if (progress < 1) requestAnimationFrame(updateRate);
+  };
+  requestAnimationFrame(updateRate);
 }
 
 function subsystemRows() {
@@ -667,6 +698,9 @@ function openWifiScreen() {
 function bluetoothScreen() {
   const previousList = screen.querySelector(".bluetooth-list");
   if (previousList) uiState.bluetoothScrollTop = previousList.scrollTop;
+  const existingLayout = uiState.activeView === "bluetooth"
+    ? screen.querySelector(".bluetooth-layout")
+    : null;
   setActiveView("bluetooth");
   const bluetooth = uiState.bluetooth;
   const devices = bluetooth?.devices ?? [];
@@ -691,33 +725,56 @@ function bluetoothScreen() {
     : `<div class="wifi-empty">${bluetooth?.running ? "LISTENING FOR BLE ADVERTISEMENTS..." : "SCANNER STANDBY"}</div>`;
   const error = uiState.bluetoothError || bluetooth?.error;
   const switching = uiState.bluetoothControlRequest !== null;
+  const finderName = target?.name || (uiState.bluetoothTarget ? "TARGET NOT SEEN" : "NO TARGET");
+  const finderValue = target ? `${Number(target.smoothed_rssi).toFixed(1)} dBm` : "-- dBm";
+  const finderField = target ? bluetoothFieldLabel(target.smoothed_rssi) : "FIELD NOT ACQUIRED";
+  const scanLabel = switching ? "CALIBRATING..." : bluetooth?.running ? "STOP FIELD SWEEP" : "START FIELD SWEEP";
 
-  screen.innerHTML = `
+  if (!existingLayout) screen.innerHTML = `
     <div class="bluetooth-layout">
       <section class="panel bluetooth-panel">
         <div class="panel-heading">
-          <span class="section-code">BLE ADVERTISEMENT RECEIVER / ${escapeHtml(bluetooth?.adapter ?? "hci0")}</span>
+          <span class="section-code bluetooth-adapter">BLE ADVERTISEMENT RECEIVER / ${escapeHtml(bluetooth?.adapter ?? "hci0")}</span>
           <h2 class="screen-title">ENTITY FINDER</h2>
         </div>
-        ${error ? `<div class="inline-error">${escapeHtml(error)}</div>` : ""}
+        <div class="inline-error bluetooth-error" ${error ? "" : "hidden"}>${escapeHtml(error ?? "")}</div>
         <div class="bluetooth-list">${deviceRows}</div>
       </section>
       <aside class="panel finder-panel">
         <span class="label">SELECTED ENTITY</span>
-        <strong class="finder-name">${escapeHtml(target?.name || (uiState.bluetoothTarget ? "TARGET NOT SEEN" : "NO TARGET"))}</strong>
-        <div class="sonar" style="--pulse-duration: ${pulseDuration}s; --signal-level: ${Math.round(normalizedSignal * 100)}%">
+        <strong class="finder-name">${escapeHtml(finderName)}</strong>
+        <div class="sonar" style="--signal-level: 0%">
           <span></span><span></span><span></span>
           <i></i>
         </div>
         <div class="finder-reading">
-          <strong>${target ? `${Number(target.smoothed_rssi).toFixed(1)} dBm` : "-- dBm"}</strong>
-          <span>${target ? escapeHtml(bluetoothFieldLabel(target.smoothed_rssi)) : "FIELD NOT ACQUIRED"}</span>
+          <strong>${escapeHtml(finderValue)}</strong>
+          <span>${escapeHtml(finderField)}</span>
         </div>
-        <button class="action" type="button" data-action="bluetooth-scan">${switching ? "CALIBRATING..." : bluetooth?.running ? "STOP FIELD SWEEP" : "START FIELD SWEEP"}</button>
+        <button class="action" type="button" data-action="bluetooth-scan">${scanLabel}</button>
       </aside>
     </div>
   `;
-  const list = screen.querySelector(".bluetooth-list");
+
+  const layout = screen.querySelector(".bluetooth-layout");
+  const adapter = layout?.querySelector(".bluetooth-adapter");
+  const errorPanel = layout?.querySelector(".bluetooth-error");
+  const list = layout?.querySelector(".bluetooth-list");
+  const name = layout?.querySelector(".finder-name");
+  const reading = layout?.querySelector(".finder-reading strong");
+  const field = layout?.querySelector(".finder-reading span");
+  const scanButton = layout?.querySelector('[data-action="bluetooth-scan"]');
+  if (adapter) adapter.textContent = `BLE ADVERTISEMENT RECEIVER / ${bluetooth?.adapter ?? "hci0"}`;
+  if (errorPanel) {
+    errorPanel.textContent = error ?? "";
+    errorPanel.hidden = !error;
+  }
+  if (list) list.innerHTML = deviceRows;
+  if (name) name.textContent = finderName;
+  if (reading) reading.textContent = finderValue;
+  if (field) field.textContent = finderField;
+  if (scanButton) scanButton.textContent = scanLabel;
+  updateSonarVisual(layout?.querySelector(".sonar"), Number(pulseDuration), normalizedSignal);
   if (list) list.scrollTop = uiState.bluetoothScrollTop;
   applyControlState();
 }

@@ -14,6 +14,12 @@
   --shadow: rgba(0, 0, 0, 0.42);
 }
 
+@property --signal-level {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -935,6 +941,7 @@ button:disabled {
 }
 
 .sonar {
+  --signal-level: 0%;
   position: relative;
   width: 178px;
   height: 178px;
@@ -942,6 +949,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 50%;
   background: radial-gradient(circle, rgba(156, 213, 139, 0.14) 0 var(--signal-level), transparent var(--signal-level));
+  transition: --signal-level 500ms ease-out;
   overflow: hidden;
 }
 
@@ -966,7 +974,7 @@ button:disabled {
   position: absolute;
   border: 1px solid rgba(156, 213, 139, 0.34);
   border-radius: 50%;
-  animation: sonar-pulse var(--pulse-duration) ease-out infinite;
+  animation: sonar-pulse var(--pulse-duration, 1.8s) ease-out infinite;
 }
 
 .sonar span:nth-child(1) { inset: 66px; }
