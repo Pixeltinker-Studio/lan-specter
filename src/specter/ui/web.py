@@ -225,8 +225,13 @@ class DemoState:
         }
 
 
-def _run_demo_internet_speed(options: InternetSpeedOptions, cancel_event: Event) -> InternetSpeedResult:
-    for _ in range(15):
+def _run_demo_internet_speed(
+    options: InternetSpeedOptions,
+    cancel_event: Event,
+    progress: Callable[[str], None],
+) -> InternetSpeedResult:
+    phases = ("server_selection", "latency", "download", "upload", "finalizing")
+    for index in range(15):
         if cancel_event.is_set():
             return InternetSpeedResult(
                 success=False,
@@ -234,6 +239,7 @@ def _run_demo_internet_speed(options: InternetSpeedOptions, cancel_event: Event)
                 error_code="cancelled",
                 error="Internet speed test cancelled by operator",
             )
+        progress(phases[min(len(phases) - 1, index // 3)])
         sleep(0.1)
     return InternetSpeedResult(
         success=True,

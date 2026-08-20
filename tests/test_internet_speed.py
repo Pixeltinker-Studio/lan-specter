@@ -1,4 +1,5 @@
 import unittest
+from io import StringIO
 from pathlib import Path
 from threading import Event
 from unittest.mock import patch
@@ -11,6 +12,7 @@ from specter.network.internet_speed import (
     options_from_environment,
     parse_librespeed_json,
     run_librespeed,
+    _phase_from_debug_line,
 )
 
 
@@ -70,6 +72,7 @@ class InternetSpeedTests(unittest.TestCase):
 
         self.assertEqual(command[0], "/opt/specter/librespeed-cli")
         self.assertIn("--json", command)
+        self.assertIn("--debug", command)
         self.assertNotIn("--share", command)
         self.assertFalse(any(argument.startswith("--telemetry") for argument in command))
         self.assertEqual(command[command.index("--interface") + 1], "wlan0")
@@ -94,19 +97,18 @@ class InternetSpeedTests(unittest.TestCase):
         self.assertEqual(options.process_timeout_seconds, 40)
         self.assertFalse(options.secure)
 
-    def test_service_reports_estimated_duration_for_progress_display(self):
-        service = InternetSpeedService(
-            InternetSpeedOptions(duration_seconds=8, process_timeout_seconds=60)
-        )
-
-        configuration = service.snapshot()["configuration"]
-
-        self.assertEqual(configuration["estimated_duration_seconds"], 26)
+    def test_debug_output_maps_to_measurement_phases(self):
+        self.assertEqual(_phase_from_debug_line("Ping test starting: 10 pings"), "latency")
+        self.assertEqual(_phase_from_debug_line("Download test starting: 3 stream(s)"), "download")
+        self.assertEqual(_phase_from_debug_line("Upload test starting: 3 stream(s)"), "upload")
+        self.assertEqual(_phase_from_debug_line("Upload test finished in 10s"), "finalizing")
+        self.assertIsNone(_phase_from_debug_line("IP info: example"))
 
     def test_service_reports_cancelled_without_success_result(self):
         entered = Event()
 
-        def runner(options, cancel_event):
+        def runner(options, cancel_event, progress):
+            progress("download")
             entered.set()
             self.assertTrue(cancel_event.wait(timeout=2))
             return InternetSpeedResult(
@@ -124,6 +126,7 @@ class InternetSpeedTests(unittest.TestCase):
 
         snapshot = service.snapshot()
         self.assertEqual(snapshot["request"]["status"], "cancelled")
+        self.assertEqual(snapshot["request"]["phase"], "download")
         self.assertFalse(snapshot["result"]["success"])
         self.assertEqual(snapshot["result"]["error_code"], "cancelled")
 
@@ -137,6 +140,34 @@ class InternetSpeedTests(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertEqual(result.interface, "eth0")
         self.assertEqual(result.error_code, "client_missing")
+
+    @patch("specter.network.internet_speed.choose_interface", return_value="eth0")
+    def test_streamed_debug_output_updates_real_measurement_phases(self, _choose_interface):
+        payload = (FIXTURES / "librespeed_v1_0_14_success.json").read_text(encoding="utf-8")
+
+        class CompletedProcess:
+            def __init__(self):
+                self.stdout = StringIO(payload)
+                self.stderr = StringIO(
+                    "Ping test starting: 10 pings\n"
+                    "Download test starting: 3 stream(s)\n"
+                    "Upload test starting: 3 stream(s)\n"
+                    "Upload test finished in 10s\n"
+                )
+                self.returncode = 0
+
+            def poll(self):
+                return self.returncode
+
+        phases = []
+        result = run_librespeed(
+            InternetSpeedOptions(),
+            process_factory=lambda *args, **kwargs: CompletedProcess(),
+            progress=phases.append,
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(phases, ["server_selection", "latency", "download", "upload", "finalizing"])
 
 
 if __name__ == "__main__":

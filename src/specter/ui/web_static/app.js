@@ -865,17 +865,34 @@ function formatElapsedDuration(seconds) {
   return `${String(minutes).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
-function internetSpeedTiming(request, config) {
+const INTERNET_SPEED_PHASES = [
+  ["server_selection", "SERVER"],
+  ["latency", "PING"],
+  ["download", "DOWNLOAD"],
+  ["upload", "UPLOAD"],
+  ["finalizing", "RESULT"],
+];
+
+function internetSpeedProgress(request, config) {
   const startedAt = Date.parse(request?.started_at ?? "");
   const elapsedSeconds = Number.isFinite(startedAt) ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
-  const duration = Math.max(1, Number(config?.duration_seconds) || 10);
-  const estimatedSeconds = Math.max(1, Number(config?.estimated_duration_seconds) || (duration * 2) + 10);
+  const phaseIndex = Math.max(0, INTERNET_SPEED_PHASES.findIndex(([phase]) => phase === request?.phase));
+  const completedPercent = Math.round((phaseIndex / INTERNET_SPEED_PHASES.length) * 100);
   return {
     elapsedSeconds,
-    estimatedSeconds,
-    progressPercent: Math.min(95, Math.round((elapsedSeconds / estimatedSeconds) * 100)),
-    overrun: elapsedSeconds > estimatedSeconds,
+    phaseIndex,
+    phaseLabel: INTERNET_SPEED_PHASES[phaseIndex][1],
+    completedPercent,
+    limitSeconds: Math.max(1, Number(config?.process_timeout_seconds) || 60),
   };
+}
+
+function internetPingAssessment(value) {
+  const pingMs = Number(value);
+  if (!Number.isFinite(pingMs)) return { className: "", label: "NOT CLASSIFIED" };
+  if (pingMs <= 30) return { className: "measurement-stable", label: "STABLE" };
+  if (pingMs <= 80) return { className: "measurement-elevated", label: "ELEVATED" };
+  return { className: "measurement-critical", label: "CRITICAL" };
 }
 
 function internetSpeedFailureTitle(code) {
@@ -917,7 +934,11 @@ function internetSpeedScreen() {
       </div>
     `;
   } else if (request.status === "running" || request.status === "cancelling") {
-    const timing = internetSpeedTiming(request, config);
+    const progress = internetSpeedProgress(request, config);
+    const phaseSteps = INTERNET_SPEED_PHASES.map(([, label], index) => {
+      const state = index < progress.phaseIndex ? "complete" : index === progress.phaseIndex ? "active" : "";
+      return `<span class="${state}">${label}</span>`;
+    }).join("");
     screen.innerHTML = `
       <div class="internet-speed-layout">
         <section class="panel">
@@ -925,22 +946,28 @@ function internetSpeedScreen() {
             <span class="section-code">EXTERNAL NETWORK / LIBRESPEED</span>
             <h2 class="screen-title">EXTERNAL CAPACITY ANALYSIS</h2>
           </div>
-          <div class="activity-line"><span></span>${request.status === "cancelling" ? "ABORT SEQUENCE IN PROGRESS" : "ANALYSIS IN PROGRESS"}</div>
+          <div class="activity-line"><span></span>${request.status === "cancelling" ? "ABORT SEQUENCE IN PROGRESS" : `ANALYSIS IN PROGRESS / ${progress.phaseLabel}`}</div>
           <div class="external-progress-meta">
-            <div><span>${timing.overrun ? "RESULT ACQUISITION" : "ESTIMATED PROGRESS"}</span><strong>${timing.progressPercent} %</strong></div>
-            <div><span>ELAPSED / EST. TOTAL</span><strong>${formatElapsedDuration(timing.elapsedSeconds)} / ≈ ${formatElapsedDuration(timing.estimatedSeconds)}</strong></div>
+            <div><span>MEASUREMENT SEQUENCE</span><strong>${String(progress.phaseIndex + 1).padStart(2, "0")} / 05</strong></div>
+            <div><span>ELAPSED / LIMIT</span><strong>${formatElapsedDuration(progress.elapsedSeconds)} / ${formatElapsedDuration(progress.limitSeconds)}</strong></div>
           </div>
           <div
             class="external-sweep"
             role="progressbar"
-            aria-label="Estimated analysis progress"
+            aria-label="Completed measurement phases"
             aria-valuemin="0"
             aria-valuemax="100"
-            aria-valuenow="${timing.progressPercent}"
+            aria-valuenow="${progress.completedPercent}"
+            aria-valuetext="Phase ${progress.phaseIndex + 1} of ${INTERNET_SPEED_PHASES.length}: ${progress.phaseLabel}"
           >
-            <span class="external-progress-fill" style="width: ${timing.progressPercent}%"></span>
-            <i class="external-scan-line" aria-hidden="true"></i>
+            <span class="external-progress-fill" style="width: ${progress.completedPercent}%"></span>
+            <i
+              class="external-scan-line"
+              aria-hidden="true"
+              style="--external-sweep-delay: -${(progress.elapsedSeconds % 1.6).toFixed(3)}s"
+            ></i>
           </div>
+          <div class="external-phase-labels" aria-hidden="true">${phaseSteps}</div>
           <div class="metrics compact-metrics">
             <div class="metric-row"><span class="label">FIELD INTERFACE</span><strong>${escapeHtml(interfaceName)}</strong></div>
             <div class="metric-row"><span class="label">MEASUREMENT SERVER</span><strong>${escapeHtml(backend)}</strong></div>
@@ -955,6 +982,7 @@ function internetSpeedScreen() {
       </div>
     `;
   } else if (request.status === "completed" && result?.success && !uiState.internetSpeedReview) {
+    const pingAssessment = internetPingAssessment(result.ping_ms);
     const totalBytes = result.bytes_sent == null && result.bytes_received == null
       ? null
       : Number(result.bytes_sent ?? 0) + Number(result.bytes_received ?? 0);
@@ -968,7 +996,7 @@ function internetSpeedScreen() {
           <div class="internet-result-grid">
             <div><span>DOWNLOAD CAPACITY</span><strong>${formatInternetValue(result.download_mbps, "Mbps")}</strong><em>INTERNET DOWNLOAD</em></div>
             <div><span>UPLOAD CAPACITY</span><strong>${formatInternetValue(result.upload_mbps, "Mbps")}</strong><em>INTERNET UPLOAD</em></div>
-            <div><span>ECHO RESPONSE</span><strong>${formatInternetValue(result.ping_ms, "ms")}</strong><em>LIBRESPEED PING</em></div>
+            <div class="${pingAssessment.className}"><span>ECHO RESPONSE</span><strong>${formatInternetValue(result.ping_ms, "ms")}</strong><em>LIBRESPEED PING / ${pingAssessment.label}</em></div>
             <div><span>FIELD INSTABILITY</span><strong>${formatInternetValue(result.jitter_ms, "ms")}</strong><em>JITTER</em></div>
           </div>
         </section>

@@ -1177,18 +1177,52 @@ button:disabled {
 
 .external-scan-line {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -3px;
-  width: 3px;
-  background: var(--phosphor);
-  box-shadow: -12px 0 22px rgba(156, 213, 139, 0.24), 0 0 10px rgba(156, 213, 139, 0.75);
+  inset: 0 auto 0 0;
+  width: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 49.25%,
+    rgba(156, 213, 139, 0.18) 49.65%,
+    var(--green) 50%,
+    rgba(156, 213, 139, 0.18) 50.35%,
+    transparent 50.75%,
+    transparent 100%
+  );
+  transform: translateX(-50%);
+  will-change: transform;
   animation: external-sweep 1.6s linear infinite;
+  animation-delay: var(--external-sweep-delay, 0s);
 }
 
 @keyframes external-sweep {
-  from { left: -3px; }
-  to { left: 100%; }
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+
+.external-phase-labels {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.external-phase-labels span {
+  border-top: 2px solid var(--line-soft);
+  padding-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  text-align: center;
+}
+
+.external-phase-labels span.complete {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.external-phase-labels span.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
 }
 
 .internet-result-grid {
@@ -1218,6 +1252,33 @@ button:disabled {
   color: var(--text);
   font-size: 26px;
   white-space: nowrap;
+}
+
+.internet-result-grid .measurement-stable {
+  border-color: rgba(156, 213, 139, 0.72);
+}
+
+.internet-result-grid .measurement-stable strong,
+.internet-result-grid .measurement-stable em {
+  color: var(--green);
+}
+
+.internet-result-grid .measurement-elevated {
+  border-color: rgba(215, 179, 95, 0.82);
+}
+
+.internet-result-grid .measurement-elevated strong,
+.internet-result-grid .measurement-elevated em {
+  color: var(--amber);
+}
+
+.internet-result-grid .measurement-critical {
+  border-color: rgba(216, 111, 97, 0.84);
+}
+
+.internet-result-grid .measurement-critical strong,
+.internet-result-grid .measurement-critical em {
+  color: var(--red);
 }
 
 .inline-error {
