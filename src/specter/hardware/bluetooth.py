@@ -31,6 +31,7 @@ class BluetoothScannerStatus:
 
 @dataclass
 class _Observation:
+    order: int
     address: str
     name: str | None
     rssi: int
@@ -54,6 +55,7 @@ class BluetoothScannerService:
         self._running = False
         self._error: str | None = None
         self._devices: dict[str, _Observation] = {}
+        self._next_order = 0
 
     def start(self) -> BluetoothScannerStatus:
         with self._lock:
@@ -94,18 +96,26 @@ class BluetoothScannerService:
 
         now_monotonic = monotonic()
         now = datetime.now(UTC).isoformat()
-        name = getattr(advertisement_data, "local_name", None) or getattr(device, "name", None)
+        advertised_name = getattr(advertisement_data, "local_name", None) or getattr(device, "name", None)
+        advertised_name = str(advertised_name).strip() if advertised_name else None
+        if advertised_name and advertised_name.casefold() == address.casefold():
+            advertised_name = None
         manufacturer_data = getattr(advertisement_data, "manufacturer_data", {}) or {}
         service_uuids = getattr(advertisement_data, "service_uuids", ()) or ()
 
         with self._lock:
             previous = self._devices.get(address)
+            name = advertised_name or (previous.name if previous else None)
             smoothed = float(rssi) if previous is None else (previous.smoothed_rssi * 0.65) + (rssi * 0.35)
             delta = 0.0 if previous is None else smoothed - previous.smoothed_rssi
             trend = "approaching" if delta >= 2.0 else "receding" if delta <= -2.0 else "stable"
+            order = previous.order if previous else self._next_order
+            if previous is None:
+                self._next_order += 1
             self._devices[address] = _Observation(
+                order=order,
                 address=address,
-                name=str(name) if name else None,
+                name=name,
                 rssi=rssi,
                 smoothed_rssi=smoothed,
                 trend=trend,
@@ -165,7 +175,7 @@ class BluetoothScannerService:
                     )
                     for observation in self._devices.values()
                 ),
-                key=lambda reading: (-reading.smoothed_rssi, reading.address),
+                key=lambda reading: self._devices[reading.address].order,
             )
         )
         return BluetoothScannerStatus(
