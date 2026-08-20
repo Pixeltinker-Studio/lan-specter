@@ -164,7 +164,8 @@ function updateFooter() {
   const entity = ping("remote_ping")?.reachable ? "RE-01" : "UNRESOLVED";
   fieldStatus.textContent = field;
   entityStatus.textContent = entity;
-  menuButton.hidden = uiState.activeView === "menu" || uiState.activeView === "boot" || uiState.activeView === "screensaver";
+  menuButton.hidden = uiState.activeView === "boot" || uiState.activeView === "screensaver";
+  menuButton.textContent = uiState.activeView === "menu" ? "HOME" : "MENU";
   modeStatus.textContent =
     uiState.activeView === "analysis" ? "ANALYSIS" :
     uiState.activeView === "result" ? "RESULT" :
@@ -173,7 +174,7 @@ function updateFooter() {
     uiState.activeView === "wifi" ? "WLAN" :
     uiState.activeView === "bluetooth" ? "BT FINDER" :
     uiState.activeView === "beeper" ? "ACOUSTIC" :
-    uiState.activeView === "info" ? "INFO" :
+    uiState.activeView === "plate" ? "HOME" :
     uiState.activeView === "boot" ? "BOOT" :
     uiState.activeView === "screensaver" ? "STANDBY" :
     "READY";
@@ -317,8 +318,8 @@ function menuScreen() {
     <div class="menu-layout">
       <section class="panel menu-panel">
         <div class="panel-heading">
-          <span class="section-code">OPERATOR SELECTION MATRIX</span>
-          <h2 class="screen-title">SPECTER MENU</h2>
+          <span class="section-code">OPERATOR CONTROL BUS / MANUAL SELECT</span>
+          <h2 class="screen-title">SUBSYSTEM ROUTING MATRIX</h2>
         </div>
         <div class="menu-grid" aria-label="Available functions" tabindex="0">
           <button class="menu-tile" type="button" data-action="analysis">
@@ -351,13 +352,7 @@ function menuScreen() {
             <strong>DIAGNOSTICS</strong>
             <em>Technical register view</em>
           </button>
-          <button class="menu-tile" type="button" data-action="info">
-            <span>07</span>
-            <strong>UNIT PLATE</strong>
-            <em>Boot and identity register</em>
-          </button>
         </div>
-        <div class="menu-scroll-hint" aria-hidden="true">SWIPE TO VIEW ALL FUNCTIONS</div>
       </section>
       <aside class="panel panel-compact">
         <p class="label">UNIT STATUS</p>
@@ -374,8 +369,8 @@ function menuScreen() {
   `;
 }
 
-function infoScreen() {
-  setActiveView("info");
+function plateScreen() {
+  setActiveView("plate");
   screen.innerHTML = `
     <div class="boot info-plate">
       <section class="boot-mark">
@@ -616,7 +611,7 @@ function bluetoothScreen() {
       return `
       <button class="bluetooth-row ${device.address === uiState.bluetoothTarget ? "target" : ""}" type="button" data-action="bluetooth-target" data-address="${escapeHtml(device.address)}">
         <span class="bluetooth-device">
-          <strong>${escapeHtml(device.name || "UNIDENTIFIED BLE ENTITY")}</strong>
+          <strong>${escapeHtml(device.name || `BLE ENTITY · ${device.address.slice(-8)}`)}</strong>
           <em>${escapeHtml(device.address)} · ${Number(device.age_seconds).toFixed(1)}s ago</em>
         </span>
         <span class="bluetooth-trend">${escapeHtml(fieldLabel.replace("FIELD ", ""))}</span>
@@ -1081,7 +1076,7 @@ function wakeFromScreensaver() {
 }
 
 function showHomeAndRefresh() {
-  menuScreen();
+  plateScreen();
   requestScan(false).catch(() => {
     // HOME remains usable even when the background Ethernet status refresh fails.
   });
@@ -1102,8 +1097,6 @@ screen.addEventListener("click", (event) => {
     runAnalysis();
   } else if (button.dataset.action === "entity") {
     runEntityScan();
-  } else if (button.dataset.action === "info") {
-    infoScreen();
   } else if (button.dataset.action === "refresh") {
     requestScan(false, { forceRender: true }).catch(errorScreen);
   } else if (button.dataset.action === "menu") {
@@ -1132,7 +1125,13 @@ screen.addEventListener("click", (event) => {
   }
 });
 
-menuButton.addEventListener("click", menuScreen);
+menuButton.addEventListener("click", () => {
+  if (uiState.activeView === "menu") {
+    plateScreen();
+  } else {
+    menuScreen();
+  }
+});
 
 window.addEventListener("pointerdown", () => {
   uiState.pointerActive = true;
@@ -1155,7 +1154,7 @@ resetScreensaverTimer();
 setTimeout(showHomeAndRefresh, BOOT_DELAY_MS);
 setTimeout(() => requestBeeper({ background: true }), 250);
 setInterval(() => {
-  if (!uiState.scanPromise && uiState.activeView === "menu" && !uiState.screensaverActive) {
+  if (!uiState.scanPromise && ["plate", "menu"].includes(uiState.activeView) && !uiState.screensaverActive) {
     requestScan(false).catch(() => {
       // A background status refresh must not replace or block HOME.
     });
