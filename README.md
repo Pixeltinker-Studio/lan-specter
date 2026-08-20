@@ -134,7 +134,7 @@ sudo systemctl enable --now specter-es01-dashboard.service
 
 ## HDMI Web UI Prototype
 
-The web UI prototype is designed for the Waveshare 7inch HDMI LCD at 1024x600 landscape. It uses the same diagnostic core as the CLI.
+The web UI prototype is designed for the Waveshare 7-inch HDMI LCD at **1024x600 landscape**. This is the project's required target resolution and the acceptance-test viewport for UI changes. Smaller viewport checks are additional compatibility tests only. The UI uses the same diagnostic core as the CLI.
 
 The UI includes a moving standby screen to reduce static image retention. Touching the display exits standby and shows the SPECTER boot screen before returning to live status.
 

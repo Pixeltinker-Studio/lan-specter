@@ -1,5 +1,13 @@
 # SPECTER Visual Design Direction
 
+## Target Hardware
+
+- Display: Waveshare 7-inch HDMI LCD
+- Native resolution: **1024 x 600 pixels**
+- Orientation: landscape
+- Primary input: capacitive touch
+- UI acceptance checks must use the native 1024 x 600 viewport. Smaller resolutions are optional compatibility checks, not the project baseline.
+
 ## Design Intent
 
 SPECTER should look like a portable scientific field instrument from a slightly alternative 1987.
