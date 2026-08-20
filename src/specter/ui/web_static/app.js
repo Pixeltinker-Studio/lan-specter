@@ -49,6 +49,7 @@ let analysisProgressTimer = null;
 let screensaverTimer = null;
 let bluetoothBeeperTimer = null;
 let internetSpeedPollTimer = null;
+let screensaverAnimationFrame = null;
 let echoSamples = [];
 
 function setClock() {
@@ -143,6 +144,7 @@ function conditionText() {
 }
 
 function setActiveView(view) {
+  if (view !== "screensaver") stopScreensaverAnimation();
   uiState.activeView = view;
   if (view !== "bluetooth") stopBluetoothBeeper();
   updateFooter();
@@ -1334,34 +1336,133 @@ function screensaverScreen() {
   setActiveView("screensaver");
   screen.innerHTML = `
     <div class="screensaver">
-      <div class="screensaver-readout">
-        <span>SPECTER ES-01 / PASSIVE ARRAY</span>
-        <strong>FIELD UNIT STANDBY</strong>
-        <em>CONTAINMENT CYCLE ACTIVE</em>
-      </div>
-      <div class="containment-stage" aria-hidden="true">
-        <div class="containment-grid">
-          <span class="containment-cell" style="--cell-turn: 8s; --capture-delay: 0s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 11s; --capture-delay: 2s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 9s; --capture-delay: 4s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 13s; --capture-delay: 6s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 10s; --capture-delay: 14s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 14s; --capture-delay: 12s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 7s; --capture-delay: 10s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 12s; --capture-delay: 8s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 15s; --capture-delay: 16s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 9s; --capture-delay: 18s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 12s; --capture-delay: 20s"><i></i></span>
-          <span class="containment-cell" style="--cell-turn: 8s; --capture-delay: 22s"><i></i></span>
-        </div>
-        <div class="containment-target"><i></i></div>
-      </div>
-      <div class="screensaver-register">
-        <span>ARRAY 12 / CAL REF 01</span>
-        <strong>PASSIVE FIELD CONTAINMENT</strong>
-      </div>
+      <svg class="containment-tunnel" viewBox="0 0 1024 600" role="img" aria-label="Moving passive containment tunnel">
+        <defs>
+          <filter id="containment-glow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="2.4" result="blur"></feGaussianBlur>
+            <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+          </filter>
+        </defs>
+        <g class="tunnel-rails">
+          <path></path><path></path><path></path><path></path>
+        </g>
+        <g class="tunnel-frames">
+          ${Array.from({ length: 16 }, (_, index) => `<rect data-frame="${index}" x="-50" y="-50" width="100" height="100"></rect>`).join("")}
+        </g>
+        <g class="tunnel-core" aria-hidden="true">
+          <rect x="-9" y="-9" width="18" height="18"></rect>
+          <path d="M -18 0 H 18 M 0 -18 V 18"></path>
+        </g>
+        <g class="containment-target" aria-hidden="true">
+          <circle r="27"></circle>
+          <path class="target-cross" d="M -38 0 H 38 M 0 -38 V 38"></path>
+          <path class="target-mark" d="M 0 -14 L 13 11 L -13 11 Z"></path>
+        </g>
+        <g class="tunnel-label tunnel-array-label">
+          <text>PASSIVE CONTAINMENT / ARRAY 12</text>
+          <text y="15">TRAIL COHERENCE ACTIVE</text>
+        </g>
+        <g class="tunnel-label tunnel-target-label">
+          <text>ENTITY VECTOR / CH-07</text>
+          <text y="15" data-vector-readout>000 / 000</text>
+        </g>
+      </svg>
     </div>
   `;
+  startScreensaverAnimation();
+}
+
+function stopScreensaverAnimation() {
+  if (screensaverAnimationFrame !== null) {
+    cancelAnimationFrame(screensaverAnimationFrame);
+    screensaverAnimationFrame = null;
+  }
+}
+
+function startScreensaverAnimation() {
+  stopScreensaverAnimation();
+  const svg = screen.querySelector(".containment-tunnel");
+  if (!svg) return;
+  const frames = [...svg.querySelectorAll("[data-frame]")];
+  const rails = [...svg.querySelectorAll(".tunnel-rails path")];
+  const core = svg.querySelector(".tunnel-core");
+  const target = svg.querySelector(".containment-target");
+  const arrayLabel = svg.querySelector(".tunnel-array-label");
+  const targetLabel = svg.querySelector(".tunnel-target-label");
+  const vectorReadout = svg.querySelector("[data-vector-readout]");
+  const startedAt = performance.now();
+  let lastRenderedAt = 0;
+
+  const clamp = (number, minimum, maximum) => Math.max(minimum, Math.min(maximum, number));
+  const trajectory = (seconds) => ({
+    x: clamp(512 + Math.sin(seconds * 0.61) * 300 + Math.sin(seconds * 1.37) * 72, 82, 942),
+    y: clamp(300 + Math.cos(seconds * 0.47) * 174 + Math.sin(seconds * 1.09) * 58, 74, 526),
+  });
+  const corners = (point, size, angleDegrees) => {
+    const angle = angleDegrees * Math.PI / 180;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    const half = size / 2;
+    return [[-half, -half], [half, -half], [half, half], [-half, half]].map(([x, y]) => ({
+      x: point.x + x * cosine - y * sine,
+      y: point.y + x * sine + y * cosine,
+    }));
+  };
+
+  const animate = (now) => {
+    if (!uiState.screensaverActive || uiState.activeView !== "screensaver" || !svg.isConnected) {
+      screensaverAnimationFrame = null;
+      return;
+    }
+    if (now - lastRenderedAt < 32) {
+      screensaverAnimationFrame = requestAnimationFrame(animate);
+      return;
+    }
+    lastRenderedAt = now;
+    const seconds = (now - startedAt) / 1000 + 5.4;
+    const geometry = frames.map((frame, index) => {
+      const age = 0.62 + index * 0.145;
+      const point = trajectory(seconds - age);
+      const size = 70 + index * 5.8 + Math.sin(seconds * 0.92 - index * 0.46) * 12;
+      const angle = seconds * (14 + (index % 4) * 2.4) + index * 9.5
+        + Math.sin(seconds * 0.7 - index * 0.31) * 24;
+      frame.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) rotate(${angle.toFixed(2)})`);
+      frame.setAttribute("x", (-size / 2).toFixed(2));
+      frame.setAttribute("y", (-size / 2).toFixed(2));
+      frame.setAttribute("width", size.toFixed(2));
+      frame.setAttribute("height", size.toFixed(2));
+      frame.style.opacity = String(0.96 - index * 0.035);
+      return { point, angle, corners: corners(point, size, angle) };
+    });
+
+    rails.forEach((rail, cornerIndex) => {
+      const points = geometry.map((frame) => frame.corners[cornerIndex]);
+      rail.setAttribute("d", points.map((point, index) => `${index ? "L" : "M"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" "));
+    });
+
+    const lead = geometry[0];
+    core.setAttribute("transform", `translate(${lead.point.x.toFixed(2)} ${lead.point.y.toFixed(2)}) rotate(${(lead.angle * -0.55).toFixed(2)})`);
+    const targetPoint = trajectory(seconds);
+    const targetHeading = Math.atan2(
+      trajectory(seconds + 0.02).y - targetPoint.y,
+      trajectory(seconds + 0.02).x - targetPoint.x,
+    ) * 180 / Math.PI + 90;
+    target.setAttribute("transform", `translate(${targetPoint.x.toFixed(2)} ${targetPoint.y.toFixed(2)}) rotate(${targetHeading.toFixed(2)})`);
+
+    const labelAnchor = geometry[Math.min(8, geometry.length - 1)].point;
+    arrayLabel.setAttribute(
+      "transform",
+      `translate(${clamp(labelAnchor.x + 42, 24, 744).toFixed(1)} ${clamp(labelAnchor.y - 38, 28, 552).toFixed(1)})`,
+    );
+    targetLabel.setAttribute(
+      "transform",
+      `translate(${clamp(targetPoint.x + 34, 24, 814).toFixed(1)} ${clamp(targetPoint.y + 45, 38, 550).toFixed(1)})`,
+    );
+    vectorReadout.textContent = `${String(Math.round(targetPoint.x)).padStart(3, "0")} / ${String(Math.round(targetPoint.y)).padStart(3, "0")}`;
+    screensaverAnimationFrame = requestAnimationFrame(animate);
+  };
+
+  screensaverAnimationFrame = requestAnimationFrame(animate);
 }
 
 function animateAnalysisProgress() {
