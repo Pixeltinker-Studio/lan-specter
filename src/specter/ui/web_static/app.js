@@ -859,6 +859,25 @@ function formatDataVolume(bytes) {
   return `${(number / 1_000_000).toFixed(1)} MB`;
 }
 
+function formatElapsedDuration(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(total / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function internetSpeedTiming(request, config) {
+  const startedAt = Date.parse(request?.started_at ?? "");
+  const elapsedSeconds = Number.isFinite(startedAt) ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
+  const duration = Math.max(1, Number(config?.duration_seconds) || 10);
+  const estimatedSeconds = Math.max(1, Number(config?.estimated_duration_seconds) || (duration * 2) + 10);
+  return {
+    elapsedSeconds,
+    estimatedSeconds,
+    progressPercent: Math.min(95, Math.round((elapsedSeconds / estimatedSeconds) * 100)),
+    overrun: elapsedSeconds > estimatedSeconds,
+  };
+}
+
 function internetSpeedFailureTitle(code) {
   return {
     client_missing: "TEST CLIENT NOT AVAILABLE",
@@ -898,6 +917,7 @@ function internetSpeedScreen() {
       </div>
     `;
   } else if (request.status === "running" || request.status === "cancelling") {
+    const timing = internetSpeedTiming(request, config);
     screen.innerHTML = `
       <div class="internet-speed-layout">
         <section class="panel">
@@ -906,7 +926,21 @@ function internetSpeedScreen() {
             <h2 class="screen-title">EXTERNAL CAPACITY ANALYSIS</h2>
           </div>
           <div class="activity-line"><span></span>${request.status === "cancelling" ? "ABORT SEQUENCE IN PROGRESS" : "ANALYSIS IN PROGRESS"}</div>
-          <div class="external-sweep" aria-hidden="true"><span></span></div>
+          <div class="external-progress-meta">
+            <div><span>${timing.overrun ? "RESULT ACQUISITION" : "ESTIMATED PROGRESS"}</span><strong>${timing.progressPercent} %</strong></div>
+            <div><span>ELAPSED / EST. TOTAL</span><strong>${formatElapsedDuration(timing.elapsedSeconds)} / ≈ ${formatElapsedDuration(timing.estimatedSeconds)}</strong></div>
+          </div>
+          <div
+            class="external-sweep"
+            role="progressbar"
+            aria-label="Estimated analysis progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="${timing.progressPercent}"
+          >
+            <span class="external-progress-fill" style="width: ${timing.progressPercent}%"></span>
+            <i class="external-scan-line" aria-hidden="true"></i>
+          </div>
           <div class="metrics compact-metrics">
             <div class="metric-row"><span class="label">FIELD INTERFACE</span><strong>${escapeHtml(interfaceName)}</strong></div>
             <div class="metric-row"><span class="label">MEASUREMENT SERVER</span><strong>${escapeHtml(backend)}</strong></div>

@@ -1131,8 +1131,8 @@ button:disabled {
 
 .external-sweep {
   position: relative;
-  height: 82px;
-  margin: 16px 0;
+  height: 54px;
+  margin: 8px 0 12px;
   border: 1px solid var(--line-soft);
   background:
     linear-gradient(rgba(135, 199, 197, 0.11) 1px, transparent 1px),
@@ -1141,16 +1141,54 @@ button:disabled {
   overflow: hidden;
 }
 
-.external-sweep span {
+.external-progress-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.external-progress-meta div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 5px;
+}
+
+.external-progress-meta span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.external-progress-meta strong {
+  color: var(--cyan);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.external-progress-fill {
   position: absolute;
-  inset: 0 auto 0 -18%;
-  width: 18%;
-  background: linear-gradient(90deg, transparent, rgba(156, 213, 139, 0.34), transparent);
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, rgba(156, 213, 139, 0.08), rgba(156, 213, 139, 0.24));
+  transition: width 500ms linear;
+}
+
+.external-scan-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 3px;
+  background: var(--phosphor);
+  box-shadow: -12px 0 22px rgba(156, 213, 139, 0.24), 0 0 10px rgba(156, 213, 139, 0.75);
   animation: external-sweep 1.6s linear infinite;
 }
 
 @keyframes external-sweep {
-  to { left: 102%; }
+  from { left: -3px; }
+  to { left: 100%; }
 }
 
 .internet-result-grid {
@@ -1583,8 +1621,16 @@ button:disabled {
   }
 
   .external-sweep {
-    height: 62px;
-    margin: 10px 0;
+    height: 46px;
+    margin: 6px 0 9px;
+  }
+
+  .external-progress-meta {
+    margin-top: 6px;
+  }
+
+  .external-progress-meta strong {
+    font-size: 13px;
   }
 
   .wifi-row,

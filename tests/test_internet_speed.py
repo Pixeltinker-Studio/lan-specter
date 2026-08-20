@@ -94,6 +94,15 @@ class InternetSpeedTests(unittest.TestCase):
         self.assertEqual(options.process_timeout_seconds, 40)
         self.assertFalse(options.secure)
 
+    def test_service_reports_estimated_duration_for_progress_display(self):
+        service = InternetSpeedService(
+            InternetSpeedOptions(duration_seconds=8, process_timeout_seconds=60)
+        )
+
+        configuration = service.snapshot()["configuration"]
+
+        self.assertEqual(configuration["estimated_duration_seconds"], 26)
+
     def test_service_reports_cancelled_without_success_result(self):
         entered = Event()
 

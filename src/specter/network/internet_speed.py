@@ -123,15 +123,18 @@ class InternetSpeedService:
 
     def _configuration(self) -> dict:
         backend = self.options.server_json or self.options.local_json or "LibreSpeed.org public server pool"
+        duration = max(1, self.options.duration_seconds)
+        process_timeout = max(1, self.options.process_timeout_seconds)
         return {
             "backend": backend,
             "public_backend": not bool(self.options.server_json or self.options.local_json),
             "interface": self.options.interface,
-            "duration_seconds": max(1, self.options.duration_seconds),
-            "process_timeout_seconds": max(1, self.options.process_timeout_seconds),
+            "duration_seconds": duration,
+            "estimated_duration_seconds": min(process_timeout, (duration * 2) + 10),
+            "process_timeout_seconds": process_timeout,
             "data_usage": (
                 "Variable; download and upload run at available connection capacity "
-                f"for {max(1, self.options.duration_seconds)} seconds each"
+                f"for {duration} seconds each"
             ),
             "telemetry": "disabled",
         }
