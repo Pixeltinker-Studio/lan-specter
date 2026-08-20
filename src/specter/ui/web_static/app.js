@@ -1267,7 +1267,7 @@ function analysisScreen() {
         <div class="step-row" data-step="1"><span>GATEWAY RESPONSE</span><span>QUEUED</span></div>
         <div class="step-row" data-step="2"><span>ENTITY ECHO</span><span>QUEUED</span></div>
         <div class="step-row" data-step="3"><span>PACKET INTEGRITY</span><span>QUEUED</span></div>
-        <div class="step-row" data-step="4"><span>FIELD CAPACITY</span><span>RUNNING</span></div>
+        <div class="step-row" data-step="4"><span>FIELD CAPACITY</span><span>QUEUED</span></div>
         <div class="progress"><span id="analysis-progress"></span></div>
       </section>
       <aside class="panel">
@@ -1334,17 +1334,32 @@ function screensaverScreen() {
   setActiveView("screensaver");
   screen.innerHTML = `
     <div class="screensaver">
-      <div class="standby-reticle" aria-hidden="true">
-        <span></span>
-        <span></span>
-        <span></span>
+      <div class="screensaver-readout">
+        <span>SPECTER ES-01 / PASSIVE ARRAY</span>
+        <strong>FIELD UNIT STANDBY</strong>
+        <em>CONTAINMENT CYCLE ACTIVE</em>
       </div>
-      <div class="screensaver-mark">
-        <span>◈</span>
-        <strong>SPECTER ES-01</strong>
-        <em>FIELD UNIT STANDBY</em>
+      <div class="containment-stage" aria-hidden="true">
+        <div class="containment-grid">
+          <span class="containment-cell" style="--cell-turn: 8s; --capture-delay: 0s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 11s; --capture-delay: 2s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 9s; --capture-delay: 4s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 13s; --capture-delay: 6s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 10s; --capture-delay: 14s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 14s; --capture-delay: 12s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 7s; --capture-delay: 10s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 12s; --capture-delay: 8s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 15s; --capture-delay: 16s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 9s; --capture-delay: 18s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 12s; --capture-delay: 20s"><i></i></span>
+          <span class="containment-cell" style="--cell-turn: 8s; --capture-delay: 22s"><i></i></span>
+        </div>
+        <div class="containment-target"><i></i></div>
       </div>
-      <div class="screensaver-trace"></div>
+      <div class="screensaver-register">
+        <span>ARRAY 12 / CAL REF 01</span>
+        <strong>PASSIVE FIELD CONTAINMENT</strong>
+      </div>
     </div>
   `;
 }
@@ -1363,8 +1378,12 @@ function animateAnalysisProgress() {
       if (tick > index + 1) {
         status.textContent = "COMPLETE";
         row.classList.add("complete");
+        row.classList.remove("running");
       } else if (tick === index + 1) {
         status.textContent = "RUNNING";
+        row.classList.add("running");
+      } else {
+        row.classList.remove("running");
       }
     });
     if (bar) bar.style.width = `${Math.min(100, tick * 18)}%`;
