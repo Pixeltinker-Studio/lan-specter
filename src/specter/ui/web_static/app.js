@@ -22,6 +22,10 @@ const uiState = {
   wifi: null,
   wifiError: null,
   wifiConfirmOff: false,
+  bluetooth: null,
+  bluetoothError: null,
+  bluetoothTarget: null,
+  bluetoothRequest: null,
 };
 let analysisProgressTimer = null;
 let screensaverTimer = null;
@@ -148,6 +152,7 @@ function updateFooter() {
     uiState.activeView === "result" ? "RESULT" :
     uiState.activeView === "menu" ? "MENU" :
     uiState.activeView === "wifi" ? "WLAN" :
+    uiState.activeView === "bluetooth" ? "BT FINDER" :
     uiState.activeView === "info" ? "INFO" :
     uiState.activeView === "boot" ? "BOOT" :
     uiState.activeView === "screensaver" ? "STANDBY" :
@@ -297,6 +302,11 @@ function menuScreen() {
             <span>05</span>
             <strong>WLAN SPECTRUM</strong>
             <em>Radio state and nearby fields</em>
+          </button>
+          <button class="menu-tile" type="button" data-action="bluetooth">
+            <span>06</span>
+            <strong>BT ENTITY FINDER</strong>
+            <em>Live BLE advertisement tracking</em>
           </button>
         </div>
       </section>
@@ -515,6 +525,114 @@ function openWifiScreen() {
   uiState.wifiConfirmOff = false;
   wifiScreen();
   requestWifi();
+}
+
+function bluetoothScreen() {
+  setActiveView("bluetooth");
+  const bluetooth = uiState.bluetooth;
+  const devices = bluetooth?.devices ?? [];
+  const target = devices.find((device) => device.address === uiState.bluetoothTarget) ?? null;
+  const targetSignal = target?.smoothed_rssi ?? -100;
+  const normalizedSignal = Math.max(0, Math.min(1, (targetSignal + 100) / 65));
+  const pulseDuration = (1.8 - normalizedSignal * 1.4).toFixed(2);
+  const deviceRows = devices.length
+    ? devices.map((device) => `
+      <button class="bluetooth-row ${device.address === uiState.bluetoothTarget ? "target" : ""}" type="button" data-action="bluetooth-target" data-address="${escapeHtml(device.address)}">
+        <span class="bluetooth-device">
+          <strong>${escapeHtml(device.name || "UNIDENTIFIED BLE ENTITY")}</strong>
+          <em>${escapeHtml(device.address)} · ${Number(device.age_seconds).toFixed(1)}s ago</em>
+        </span>
+        <span class="bluetooth-trend ${escapeHtml(device.trend)}">${escapeHtml(device.trend).toUpperCase()}</span>
+        <span class="bluetooth-rssi"><strong>${Math.round(device.rssi)} dBm</strong><em>AVG ${Number(device.smoothed_rssi).toFixed(1)}</em></span>
+      </button>
+    `).join("")
+    : `<div class="wifi-empty">${bluetooth?.running ? "LISTENING FOR BLE ADVERTISEMENTS..." : "SCANNER STANDBY"}</div>`;
+  const error = uiState.bluetoothError || bluetooth?.error;
+
+  screen.innerHTML = `
+    <div class="bluetooth-layout">
+      <section class="panel bluetooth-panel">
+        <div class="panel-heading">
+          <span class="section-code">BLE ADVERTISEMENT RECEIVER / ${escapeHtml(bluetooth?.adapter ?? "hci0")}</span>
+          <h2 class="screen-title">ENTITY FINDER</h2>
+        </div>
+        ${error ? `<div class="inline-error">${escapeHtml(error)}</div>` : ""}
+        <div class="bluetooth-list">${deviceRows}</div>
+      </section>
+      <aside class="panel finder-panel">
+        <span class="label">SELECTED ENTITY</span>
+        <strong class="finder-name">${escapeHtml(target?.name || (uiState.bluetoothTarget ? "TARGET NOT SEEN" : "NO TARGET"))}</strong>
+        <div class="sonar" style="--pulse-duration: ${pulseDuration}s; --signal-level: ${Math.round(normalizedSignal * 100)}%">
+          <span></span><span></span><span></span>
+          <i></i>
+        </div>
+        <div class="finder-reading">
+          <strong>${target ? `${Number(target.smoothed_rssi).toFixed(1)} dBm` : "-- dBm"}</strong>
+          <span>${target ? escapeHtml(target.trend).toUpperCase() : "RSSI TREND ONLY"}</span>
+        </div>
+        <p class="finder-disclaimer">RELATIVE SIGNAL TREND — NO DISTANCE OR DIRECTION</p>
+        <button class="action" type="button" data-action="bluetooth-scan">${bluetooth?.running ? "STOP SCANNER" : "START SCANNER"}</button>
+        <button class="action secondary" type="button" data-action="menu">RETURN TO MENU</button>
+      </aside>
+    </div>
+  `;
+  applyControlState();
+}
+
+async function requestBluetooth({ background = false } = {}) {
+  if (uiState.bluetoothRequest) return uiState.bluetoothRequest;
+  if (!background && uiState.operation !== "idle") return null;
+  if (!background) setOperation("bluetooth");
+
+  const pending = (async () => {
+    try {
+      const response = await fetch("/api/bluetooth", { cache: "no-store", headers: { Accept: "application/json" } });
+      const payload = await response.json();
+      uiState.bluetooth = payload.bluetooth ?? null;
+      uiState.bluetoothError = response.ok ? null : payload.error ?? `Bluetooth request failed (${response.status})`;
+      if (uiState.activeView === "bluetooth") bluetoothScreen();
+      return payload;
+    } catch (error) {
+      uiState.bluetoothError = error instanceof Error ? error.message : "Bluetooth request failed";
+      if (uiState.activeView === "bluetooth") bluetoothScreen();
+      return null;
+    }
+  })();
+  uiState.bluetoothRequest = pending;
+  try {
+    return await pending;
+  } finally {
+    if (uiState.bluetoothRequest === pending) uiState.bluetoothRequest = null;
+    if (!background) setOperation("idle");
+  }
+}
+
+async function setBluetoothScanning(enabled) {
+  if (uiState.operation !== "idle") return;
+  setOperation("bluetooth");
+  uiState.bluetoothError = null;
+  try {
+    const response = await fetch("/api/bluetooth/scan", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    const payload = await response.json();
+    uiState.bluetooth = payload.bluetooth ?? uiState.bluetooth;
+    if (!response.ok) uiState.bluetoothError = payload.error ?? `Bluetooth change failed (${response.status})`;
+  } catch (error) {
+    uiState.bluetoothError = error instanceof Error ? error.message : "Bluetooth change failed";
+  } finally {
+    setOperation("idle");
+    bluetoothScreen();
+  }
+}
+
+function openBluetoothScreen() {
+  if (uiState.operation !== "idle") return;
+  bluetoothScreen();
+  requestBluetooth();
 }
 
 function analysisScreen() {
@@ -798,6 +916,13 @@ screen.addEventListener("click", (event) => {
     requestWifi({ rescan: true });
   } else if (button.dataset.action === "wifi-toggle") {
     toggleWifiRadio();
+  } else if (button.dataset.action === "bluetooth") {
+    openBluetoothScreen();
+  } else if (button.dataset.action === "bluetooth-scan") {
+    setBluetoothScanning(uiState.bluetooth?.running !== true);
+  } else if (button.dataset.action === "bluetooth-target") {
+    uiState.bluetoothTarget = button.dataset.address;
+    bluetoothScreen();
   }
 });
 
@@ -818,3 +943,8 @@ setInterval(() => {
   }
 }, 30000);
 setInterval(fetchEcho, ECHO_REFRESH_MS);
+setInterval(() => {
+  if (uiState.activeView === "bluetooth" && uiState.bluetooth?.running) {
+    requestBluetooth({ background: true });
+  }
+}, 750);

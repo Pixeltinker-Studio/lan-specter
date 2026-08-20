@@ -23,7 +23,7 @@ Install the expected system tools on both Raspberry Pis:
 
 ```bash
 sudo apt update
-sudo apt install iperf3 ethtool lldpd network-manager python3-pip python3-venv git avahi-daemon libnss-mdns
+sudo apt install bluez iperf3 ethtool lldpd network-manager python3-pip python3-venv git avahi-daemon libnss-mdns
 ```
 
 Set the hostnames:
@@ -82,6 +82,8 @@ Run the UI with simulated data:
 ```bash
 specter-ui --demo
 ```
+
+The Bluetooth entity finder listens for Bluetooth Low Energy advertisements through BlueZ. It reports measured RSSI values and a short-term warmer/colder trend. RSSI is not a reliable distance or direction measurement, and devices that are not advertising cannot be detected.
 
 ## HDMI Console Display
 

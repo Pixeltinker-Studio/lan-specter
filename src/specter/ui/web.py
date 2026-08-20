@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from specter.core.diagnostics import ScanOptions, run_scan
 from specter.core.results import DiagnosticsResult
 from specter.core.serialization import to_jsonable
+from specter.hardware.bluetooth import BluetoothScannerService
 from specter.network.discovery import DEFAULT_REMOTE_HOSTNAME, detect_remote
 from specter.network.wifi import read_wifi_status, set_wifi_radio
 
@@ -45,6 +46,7 @@ class DemoState:
     started_at: float = field(default_factory=monotonic)
     analysis_runs: int = 0
     wifi_enabled: bool = True
+    bluetooth_scanning: bool = False
 
     def payload(self, *, full_analysis: bool) -> dict:
         elapsed = monotonic() - self.started_at
@@ -154,6 +156,46 @@ class DemoState:
                         },
                     ]
                     if self.wifi_enabled
+                    else []
+                ),
+            }
+        }
+
+    def bluetooth_payload(self) -> dict:
+        elapsed = monotonic() - self.started_at
+        near_signal = round(-58 + sin(elapsed * 1.4) * 7)
+        trend = "approaching" if sin(elapsed * 1.4) > 0.35 else "receding" if sin(elapsed * 1.4) < -0.35 else "stable"
+        return {
+            "bluetooth": {
+                "running": self.bluetooth_scanning,
+                "adapter": "hci0",
+                "error": None,
+                "devices": (
+                    [
+                        {
+                            "address": "C0:DE:00:00:00:01",
+                            "name": "SPECTER TEST BEACON",
+                            "rssi": near_signal,
+                            "smoothed_rssi": float(near_signal),
+                            "trend": trend,
+                            "last_seen": _utc_now(),
+                            "age_seconds": 0.1,
+                            "manufacturer_ids": [76],
+                            "service_uuids": ["180f"],
+                        },
+                        {
+                            "address": "C0:DE:00:00:00:02",
+                            "name": "FIELD TAG",
+                            "rssi": -81,
+                            "smoothed_rssi": -79.4,
+                            "trend": "stable",
+                            "last_seen": _utc_now(),
+                            "age_seconds": 0.6,
+                            "manufacturer_ids": [],
+                            "service_uuids": [],
+                        },
+                    ]
+                    if self.bluetooth_scanning
                     else []
                 ),
             }
@@ -300,7 +342,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 def serve(*, host: str = "127.0.0.1", port: int = 8765, demo: bool = False) -> int:
     options = WebUiOptions()
     demo_state = DemoState()
-    handler = build_handler(options=options, demo=demo, demo_state=demo_state)
+    bluetooth_scanner = BluetoothScannerService()
+    handler = build_handler(
+        options=options,
+        demo=demo,
+        demo_state=demo_state,
+        bluetooth_scanner=bluetooth_scanner,
+    )
     server = ThreadingHTTPServer((host, port), handler)
     print(f"SPECTER UI listening on http://{host}:{port}")
     if demo:
@@ -311,6 +359,7 @@ def serve(*, host: str = "127.0.0.1", port: int = 8765, demo: bool = False) -> i
         print("")
         return 0
     finally:
+        bluetooth_scanner.stop()
         server.server_close()
     return 0
 
@@ -321,6 +370,7 @@ def build_handler(
     demo: bool,
     demo_state: DemoState,
     scan_coordinator: ScanCoordinator | None = None,
+    bluetooth_scanner: BluetoothScannerService | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     coordinator = scan_coordinator or ScanCoordinator(
         lambda full_analysis: build_scan_payload(
@@ -331,6 +381,7 @@ def build_handler(
         )
     )
     wifi_lock = Lock()
+    ble_scanner = bluetooth_scanner or BluetoothScannerService()
 
     class SpecterRequestHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -351,6 +402,10 @@ def build_handler(
                     with wifi_lock:
                         status = read_wifi_status(interface=options.wifi_interface, rescan=False)
                     self._send_json({"wifi": to_jsonable(status)})
+                return
+            if parsed.path == "/api/bluetooth":
+                payload = demo_state.bluetooth_payload() if demo else {"bluetooth": to_jsonable(ble_scanner.snapshot())}
+                self._send_json(payload)
                 return
             if parsed.path.startswith("/static/"):
                 self._serve_static(parsed.path.removeprefix("/static/"))
@@ -387,6 +442,21 @@ def build_handler(
                         {"wifi": to_jsonable(status), "error": change_error},
                         status=response_status,
                     )
+                return
+            if parsed.path == "/api/bluetooth/scan":
+                request = self._read_json()
+                if request is None or not isinstance(request.get("enabled"), bool):
+                    self._send_json(
+                        {"error": "Expected JSON object with boolean 'enabled'"},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                if demo:
+                    demo_state.bluetooth_scanning = request["enabled"]
+                    self._send_json(demo_state.bluetooth_payload())
+                else:
+                    status = ble_scanner.start() if request["enabled"] else ble_scanner.stop()
+                    self._send_json({"bluetooth": to_jsonable(status)})
                 return
             if parsed.path != "/api/scan":
                 self.send_error(HTTPStatus.NOT_FOUND)
