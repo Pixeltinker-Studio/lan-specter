@@ -1628,6 +1628,8 @@ function startScreensaverAnimation() {
   let respawnUntil = 0;
   let entityIndex = 0;
   let waypointIndex = 0;
+  let captureFrameAngles = [];
+  let captureTargetAngle = 0;
 
   const entityIds = ["07", "12", "19", "31", "42", "58", "73"];
   const waypoints = [
@@ -1698,18 +1700,18 @@ function startScreensaverAnimation() {
     targetState.y = clamp(targetState.y + targetState.vy * deltaSeconds, 68, 532);
 
     const initialChaseDistance = length(targetState.x - chaserState.x, targetState.y - chaserState.y);
-    const predictionSeconds = phase === "pursuit" ? clamp(initialChaseDistance / 260, 0.18, 1.15) : 0;
+    const predictionSeconds = phase === "pursuit" ? clamp(initialChaseDistance / 420, 0.1, 0.55) : 0;
     const pursuitX = targetState.x + targetState.vx * predictionSeconds;
     const pursuitY = targetState.y + targetState.vy * predictionSeconds;
     const chaseX = pursuitX - chaserState.x;
     const chaseY = pursuitY - chaserState.y;
     const pursuitDistance = length(chaseX, chaseY);
     const desiredChaserSpeed = phase === "pursuit"
-      ? clamp(142 + pursuitDistance * 0.5, 142, 318)
-      : clamp(pursuitDistance * 4.2, 0, 260);
+      ? clamp(92 + pursuitDistance * 0.2, 92, 178)
+      : clamp(pursuitDistance * 3.2, 0, 190);
     const desiredChaserVx = chaseX / Math.max(1, pursuitDistance) * desiredChaserSpeed;
     const desiredChaserVy = chaseY / Math.max(1, pursuitDistance) * desiredChaserSpeed;
-    const chaserBlend = Math.min(1, (phase === "pursuit" ? 4.2 : 6.8) * deltaSeconds);
+    const chaserBlend = Math.min(1, (phase === "pursuit" ? 2.4 : 5) * deltaSeconds);
     chaserState.vx += (desiredChaserVx - chaserState.vx) * chaserBlend;
     chaserState.vy += (desiredChaserVy - chaserState.vy) * chaserBlend;
     chaserState.x = clamp(chaserState.x + chaserState.vx * deltaSeconds, 58, 966);
@@ -1722,6 +1724,11 @@ function startScreensaverAnimation() {
     if (phase === "pursuit" && chaseDistance < 58) {
       phase = "capture";
       phaseStartedAt = now;
+      captureFrameAngles = frames.map((frame) => {
+        const rotation = /rotate\((-?[\d.]+)\)/.exec(frame.getAttribute("transform") || "");
+        return rotation ? Number(rotation[1]) : 0;
+      });
+      captureTargetAngle = captureFrameAngles[0] || 0;
     } else if (phase === "capture" && phaseSeconds >= 1.05) {
       phase = "destroy";
       phaseStartedAt = now;
@@ -1744,6 +1751,7 @@ function startScreensaverAnimation() {
       phaseStartedAt = now;
       respawnUntil = now + 560;
       lockAmount = 0;
+      captureFrameAngles = [];
     }
 
     history.unshift({ x: chaserState.x, y: chaserState.y });
@@ -1754,7 +1762,7 @@ function startScreensaverAnimation() {
       : phase === "capture"
         ? captureProgress * captureProgress * (3 - 2 * captureProgress)
         : lockAmount * 0.28;
-    const synchronizedAngle = seconds * 112;
+    const synchronizedAngle = seconds * 18;
     const frameGeometry = frames.map((frame, index) => {
       const trailPoint = sampleHistory(index * delayStep);
       const point = {
@@ -1764,11 +1772,16 @@ function startScreensaverAnimation() {
       const distanceToTarget = length(targetState.x - point.x, targetState.y - point.y);
       const freeSize = clamp(38 + distanceToTarget * 0.3, 38, 172);
       const size = freeSize + (46 - freeSize) * synchronization;
-      const spinDirection = index % 2 === 0 ? 1 : -1;
-      const spinRate = 28 + index * 8.5 + distanceToTarget * 0.11 + length(targetState.vx, targetState.vy) * 0.08;
-      const freeAngle = spinDirection * seconds * spinRate + index * 31
-        + Math.sin(seconds * (0.82 + index * 0.075) - index * 0.42) * 38;
-      const angle = freeAngle + (synchronizedAngle - freeAngle) * synchronization;
+      const spinDirection = index % 3 === 0 ? -1 : 1;
+      const spinRate = 7 + index * 2.1 + distanceToTarget * 0.014 + length(targetState.vx, targetState.vy) * 0.018;
+      const freeAngle = spinDirection * seconds * spinRate + index * 24
+        + Math.sin(seconds * (0.42 + index * 0.025) - index * 0.38) * 10;
+      const synchronizedTurn = ((synchronizedAngle - freeAngle + 135) % 90) - 45;
+      const captureStartAngle = captureFrameAngles[index] ?? freeAngle;
+      const captureTurn = ((captureTargetAngle - captureStartAngle + 135) % 90) - 45;
+      const angle = phase === "capture" || phase === "destroy"
+        ? captureStartAngle + captureTurn * synchronization
+        : freeAngle + synchronizedTurn * synchronization;
       frame.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) rotate(${angle.toFixed(2)})`);
       frame.setAttribute("x", (-size / 2).toFixed(2));
       frame.setAttribute("y", (-size / 2).toFixed(2));
