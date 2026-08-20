@@ -81,6 +81,13 @@ class WebUiTests(unittest.TestCase):
         self.assertEqual(payload["echo"]["remote_ping"]["target"], "specter-re01.local")
         self.assertIsInstance(payload["echo"]["remote_ping"]["avg_latency_ms"], float)
 
+    def test_demo_hardware_payloads_are_explicitly_available(self):
+        state = DemoState()
+        state.bluetooth_scanning = True
+
+        self.assertTrue(state.bluetooth_payload()["bluetooth"]["running"])
+        self.assertTrue(state.beeper_payload()["beeper"]["available"])
+
     def test_infer_ready_state_from_live_result(self):
         result = DiagnosticsResult(
             interface="eth0",

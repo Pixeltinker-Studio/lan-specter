@@ -73,8 +73,13 @@ class BluetoothScannerService:
         if thread is not None and thread.is_alive():
             thread.join(timeout=3)
         with self._lock:
+            if thread is not None and thread.is_alive():
+                self._error = "Bluetooth scanner did not stop within 3 seconds"
+                self._running = True
+                return self._snapshot_locked()
             self._running = False
             self._thread = None
+            self._devices.clear()
             return self._snapshot_locked()
 
     def snapshot(self) -> BluetoothScannerStatus:

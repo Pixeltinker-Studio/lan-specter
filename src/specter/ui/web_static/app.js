@@ -26,6 +26,8 @@ const uiState = {
   bluetoothError: null,
   bluetoothTarget: null,
   bluetoothRequest: null,
+  beeper: null,
+  beeperError: null,
 };
 let analysisProgressTimer = null;
 let screensaverTimer = null;
@@ -137,7 +139,10 @@ function applyControlState() {
   const busy = uiState.operation !== "idle";
   document.querySelectorAll("button").forEach((button) => {
     const requiresWifi = button.dataset.requiresWifi === "true";
-    button.disabled = busy || (requiresWifi && uiState.wifi?.radio_enabled !== true);
+    const requiresBeeper = button.dataset.requiresBeeper === "true";
+    button.disabled = busy
+      || (requiresWifi && uiState.wifi?.radio_enabled !== true)
+      || (requiresBeeper && uiState.beeper?.available !== true);
     button.setAttribute("aria-busy", busy ? "true" : "false");
   });
 }
@@ -153,6 +158,7 @@ function updateFooter() {
     uiState.activeView === "menu" ? "MENU" :
     uiState.activeView === "wifi" ? "WLAN" :
     uiState.activeView === "bluetooth" ? "BT FINDER" :
+    uiState.activeView === "beeper" ? "ACOUSTIC" :
     uiState.activeView === "info" ? "INFO" :
     uiState.activeView === "boot" ? "BOOT" :
     uiState.activeView === "screensaver" ? "STANDBY" :
@@ -307,6 +313,11 @@ function menuScreen() {
             <span>06</span>
             <strong>BT ENTITY FINDER</strong>
             <em>Live BLE advertisement tracking</em>
+          </button>
+          <button class="menu-tile" type="button" data-action="beeper">
+            <span>07</span>
+            <strong>ACOUSTIC SIGNALS</strong>
+            <em>Piezo status, mute and test</em>
           </button>
         </div>
       </section>
@@ -590,6 +601,9 @@ async function requestBluetooth({ background = false } = {}) {
       const payload = await response.json();
       uiState.bluetooth = payload.bluetooth ?? null;
       uiState.bluetoothError = response.ok ? null : payload.error ?? `Bluetooth request failed (${response.status})`;
+      if (uiState.bluetoothTarget && uiState.bluetooth?.devices?.some((device) => device.address === uiState.bluetoothTarget)) {
+        triggerBeeper("scan_tick");
+      }
       if (uiState.activeView === "bluetooth") bluetoothScreen();
       return payload;
     } catch (error) {
@@ -633,6 +647,101 @@ function openBluetoothScreen() {
   if (uiState.operation !== "idle") return;
   bluetoothScreen();
   requestBluetooth();
+}
+
+function beeperScreen() {
+  setActiveView("beeper");
+  const beeper = uiState.beeper;
+  const state = beeper?.available ? "READY" : beeper?.configured ? "FAULT" : "NOT CONFIGURED";
+  const stateClass = beeper?.available ? "" : "anomaly";
+  const error = uiState.beeperError || beeper?.last_error;
+  screen.innerHTML = `
+    <div class="beeper-layout">
+      <section class="panel">
+        <div class="panel-heading">
+          <span class="section-code">GPIO ACOUSTIC TRANSDUCER / BCM ${escapeHtml(beeper?.pin ?? "--")}</span>
+          <h2 class="screen-title">ACOUSTIC SIGNALS</h2>
+        </div>
+        ${error ? `<div class="inline-error">${escapeHtml(error)}</div>` : ""}
+        <div class="beeper-tests">
+          <button class="menu-tile" type="button" data-action="beeper-test" data-pattern="boot" data-requires-beeper="true"><span>01</span><strong>BOOT</strong><em>Initialization sequence</em></button>
+          <button class="menu-tile" type="button" data-action="beeper-test" data-pattern="scan_tick" data-requires-beeper="true"><span>02</span><strong>SCAN TICK</strong><em>Finder pulse</em></button>
+          <button class="menu-tile" type="button" data-action="beeper-test" data-pattern="acquired" data-requires-beeper="true"><span>03</span><strong>ACQUIRED</strong><em>Positive target lock</em></button>
+          <button class="menu-tile" type="button" data-action="beeper-test" data-pattern="warning" data-requires-beeper="true"><span>04</span><strong>WARNING</strong><em>Operator attention</em></button>
+          <button class="menu-tile" type="button" data-action="beeper-test" data-pattern="error" data-requires-beeper="true"><span>05</span><strong>ERROR</strong><em>Critical failure</em></button>
+        </div>
+      </section>
+      <aside class="panel panel-compact beeper-controls">
+        <div class="condition ${stateClass}"><span class="label">BEEPER STATE</span><strong>${state}</strong></div>
+        <div class="readout"><span>OUTPUT</span><strong>${beeper?.muted ? "MUTED" : "ACTIVE"}</strong></div>
+        <div class="readout"><span>QUEUED PATTERNS</span><strong>${beeper?.queued_patterns ?? 0}</strong></div>
+        <button class="action" type="button" data-action="beeper-mute">${beeper?.muted ? "UNMUTE" : "MUTE"}</button>
+        <button class="action secondary" type="button" data-action="menu">RETURN TO MENU</button>
+      </aside>
+    </div>
+  `;
+  applyControlState();
+}
+
+async function requestBeeper({ background = false } = {}) {
+  if (!background && uiState.operation !== "idle") return;
+  if (!background) setOperation("beeper");
+  try {
+    const response = await fetch("/api/beeper", { cache: "no-store", headers: { Accept: "application/json" } });
+    const payload = await response.json();
+    uiState.beeper = payload.beeper ?? null;
+    uiState.beeperError = response.ok ? null : payload.error ?? `Beeper request failed (${response.status})`;
+  } catch (error) {
+    uiState.beeperError = error instanceof Error ? error.message : "Beeper request failed";
+  } finally {
+    if (!background) setOperation("idle");
+    if (uiState.activeView === "beeper") beeperScreen();
+  }
+}
+
+async function triggerBeeper(pattern) {
+  if (!uiState.beeper?.available || uiState.beeper.muted) return;
+  try {
+    const response = await fetch("/api/beeper/trigger", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ pattern }),
+    });
+    const payload = await response.json();
+    if (payload.beeper) uiState.beeper = payload.beeper;
+    if (!response.ok) uiState.beeperError = payload.error ?? payload.beeper?.last_error ?? "Beeper trigger failed";
+    if (uiState.activeView === "beeper") beeperScreen();
+  } catch {
+    // Acoustic feedback must never block or break the primary UI action.
+  }
+}
+
+async function setBeeperMuted(muted) {
+  if (uiState.operation !== "idle") return;
+  setOperation("beeper");
+  try {
+    const response = await fetch("/api/beeper/mute", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ muted }),
+    });
+    const payload = await response.json();
+    uiState.beeper = payload.beeper ?? uiState.beeper;
+    uiState.beeperError = response.ok ? null : payload.error ?? "Beeper mute change failed";
+  } catch (error) {
+    uiState.beeperError = error instanceof Error ? error.message : "Beeper mute change failed";
+  } finally {
+    setOperation("idle");
+    beeperScreen();
+  }
+}
+
+function openBeeperScreen() {
+  if (uiState.operation !== "idle") return;
+  beeperScreen();
+  requestBeeper();
 }
 
 function analysisScreen() {
@@ -868,7 +977,9 @@ async function runAnalysis() {
   analysisScreen();
   try {
     await requestScan(true, { forceRender: true });
+    triggerBeeper("acquired");
   } catch {
+    triggerBeeper("error");
     errorScreen();
   }
 }
@@ -898,6 +1009,7 @@ function registerActivity() {
 screen.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
+  if (button.dataset.action !== "beeper-test") triggerBeeper("input");
   if (button.dataset.action === "analysis") {
     runAnalysis();
   } else if (button.dataset.action === "entity") {
@@ -923,6 +1035,12 @@ screen.addEventListener("click", (event) => {
   } else if (button.dataset.action === "bluetooth-target") {
     uiState.bluetoothTarget = button.dataset.address;
     bluetoothScreen();
+  } else if (button.dataset.action === "beeper") {
+    openBeeperScreen();
+  } else if (button.dataset.action === "beeper-test") {
+    triggerBeeper(button.dataset.pattern);
+  } else if (button.dataset.action === "beeper-mute") {
+    setBeeperMuted(uiState.beeper?.muted !== true);
   }
 });
 
@@ -937,6 +1055,7 @@ setInterval(setClock, 1000);
 bootScreen();
 resetScreensaverTimer();
 setTimeout(() => requestScan(false, { forceRender: true }).catch(errorScreen), BOOT_DELAY_MS);
+setTimeout(() => requestBeeper({ background: true }), 250);
 setInterval(() => {
   if (!uiState.scanPromise && !["result", "menu", "info"].includes(uiState.activeView) && !uiState.screensaverActive) {
     requestScan(false).catch(errorScreen);

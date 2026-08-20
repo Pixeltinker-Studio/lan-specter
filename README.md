@@ -23,7 +23,7 @@ Install the expected system tools on both Raspberry Pis:
 
 ```bash
 sudo apt update
-sudo apt install bluez iperf3 ethtool lldpd network-manager python3-pip python3-venv git avahi-daemon libnss-mdns
+sudo apt install bluez iperf3 ethtool lldpd network-manager python3-gpiozero python3-lgpio python3-pip python3-venv git avahi-daemon libnss-mdns
 ```
 
 Set the hostnames:
@@ -84,6 +84,35 @@ specter-ui --demo
 ```
 
 The Bluetooth entity finder listens for Bluetooth Low Energy advertisements through BlueZ. It reports measured RSSI values and a short-term warmer/colder trend. RSSI is not a reliable distance or direction measurement, and devices that are not advertising cannot be detected.
+
+### Passive Piezo Beeper
+
+The acoustic signal output is disabled until a BCM GPIO pin is explicitly configured. For a robust installation, drive the passive piezo through a small NPN transistor or logic-level MOSFET instead of treating a GPIO as a speaker output.
+
+Recommended reference circuit for a low-voltage passive piezo:
+
+```text
+GPIO18 --- 1 kΩ --- NPN base
+                     |
+                  100 kΩ
+                     |
+GND -----------------+--- NPN emitter
+
+3.3 V --- PIEZO +
+          PIEZO - --- NPN collector
+```
+
+Confirm the voltage and current rating of the actual piezo before wiring it. Use a common ground. If the selected transducer module already contains a driver, follow its datasheet instead of this reference circuit.
+
+After choosing the pin, enable it for the service:
+
+```bash
+sudo cp config/specter.env.example /etc/default/specter
+sudoedit /etc/default/specter
+sudo systemctl restart specter-es01-web.service
+```
+
+`SPECTER_BEEPER_PIN` uses BCM numbering. The example selects GPIO18. `GPIOZERO_PIN_FACTORY=lgpio` selects the Raspberry Pi 5-compatible GPIO backend. Set `SPECTER_BEEPER_MUTED=1` to boot silently. The UI reports the beeper as unavailable when no pin is configured or GPIO initialization fails; it does not simulate successful output in live mode. If the virtual environment cannot import the OS-provided `lgpio` module, recreate it with `python3 -m venv --system-site-packages .venv` before installing this project.
 
 ## HDMI Console Display
 

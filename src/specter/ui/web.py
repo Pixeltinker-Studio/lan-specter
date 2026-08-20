@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 from specter.core.diagnostics import ScanOptions, run_scan
 from specter.core.results import DiagnosticsResult
 from specter.core.serialization import to_jsonable
+from specter.hardware.beeper import PATTERNS, BeeperService
 from specter.hardware.bluetooth import BluetoothScannerService
 from specter.network.discovery import DEFAULT_REMOTE_HOSTNAME, detect_remote
 from specter.network.wifi import read_wifi_status, set_wifi_radio
@@ -47,6 +49,7 @@ class DemoState:
     analysis_runs: int = 0
     wifi_enabled: bool = True
     bluetooth_scanning: bool = False
+    beeper_muted: bool = False
 
     def payload(self, *, full_analysis: bool) -> dict:
         elapsed = monotonic() - self.started_at
@@ -201,6 +204,19 @@ class DemoState:
             }
         }
 
+    def beeper_payload(self) -> dict:
+        return {
+            "beeper": {
+                "configured": True,
+                "available": True,
+                "muted": self.beeper_muted,
+                "pin": 18,
+                "queued_patterns": 0,
+                "last_error": None,
+            },
+            "patterns": sorted(PATTERNS),
+        }
+
 
 class ScanCoordinator:
     """Serialize scans and let concurrent callers share a compatible result."""
@@ -330,24 +346,61 @@ def _demo_iperf(target: str, bits_per_second: int | None) -> dict | None:
     }
 
 
+def _optional_env_int(name: str) -> int | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="specter-ui", description="Run the local SPECTER HDMI web UI")
     parser.add_argument("--host", default="127.0.0.1", help="address to listen on")
     parser.add_argument("--port", type=int, default=8765, help="port to listen on")
     parser.add_argument("--demo", action="store_true", help="use simulated scan data")
+    parser.add_argument(
+        "--beeper-pin",
+        type=int,
+        default=_optional_env_int("SPECTER_BEEPER_PIN"),
+        help="BCM GPIO pin for a passive piezo beeper",
+    )
+    parser.add_argument(
+        "--mute",
+        action="store_true",
+        default=_env_flag("SPECTER_BEEPER_MUTED"),
+        help="start with acoustic signals muted",
+    )
     args = parser.parse_args(argv)
-    return serve(host=args.host, port=args.port, demo=args.demo)
+    return serve(host=args.host, port=args.port, demo=args.demo, beeper_pin=args.beeper_pin, mute=args.mute)
 
 
-def serve(*, host: str = "127.0.0.1", port: int = 8765, demo: bool = False) -> int:
+def serve(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    demo: bool = False,
+    beeper_pin: int | None = None,
+    mute: bool = False,
+) -> int:
     options = WebUiOptions()
     demo_state = DemoState()
     bluetooth_scanner = BluetoothScannerService()
+    beeper = BeeperService(pin=beeper_pin, muted=mute)
+    if beeper_pin is not None:
+        beeper.trigger("boot")
     handler = build_handler(
         options=options,
         demo=demo,
         demo_state=demo_state,
         bluetooth_scanner=bluetooth_scanner,
+        beeper=beeper,
     )
     server = ThreadingHTTPServer((host, port), handler)
     print(f"SPECTER UI listening on http://{host}:{port}")
@@ -360,6 +413,7 @@ def serve(*, host: str = "127.0.0.1", port: int = 8765, demo: bool = False) -> i
         return 0
     finally:
         bluetooth_scanner.stop()
+        beeper.stop()
         server.server_close()
     return 0
 
@@ -371,6 +425,7 @@ def build_handler(
     demo_state: DemoState,
     scan_coordinator: ScanCoordinator | None = None,
     bluetooth_scanner: BluetoothScannerService | None = None,
+    beeper: BeeperService | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     coordinator = scan_coordinator or ScanCoordinator(
         lambda full_analysis: build_scan_payload(
@@ -382,6 +437,7 @@ def build_handler(
     )
     wifi_lock = Lock()
     ble_scanner = bluetooth_scanner or BluetoothScannerService()
+    beeper_service = beeper or BeeperService(pin=None)
 
     class SpecterRequestHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -405,6 +461,13 @@ def build_handler(
                 return
             if parsed.path == "/api/bluetooth":
                 payload = demo_state.bluetooth_payload() if demo else {"bluetooth": to_jsonable(ble_scanner.snapshot())}
+                self._send_json(payload)
+                return
+            if parsed.path == "/api/beeper":
+                payload = demo_state.beeper_payload() if demo else {
+                    "beeper": to_jsonable(beeper_service.status()),
+                    "patterns": sorted(PATTERNS),
+                }
                 self._send_json(payload)
                 return
             if parsed.path.startswith("/static/"):
@@ -457,6 +520,40 @@ def build_handler(
                 else:
                     status = ble_scanner.start() if request["enabled"] else ble_scanner.stop()
                     self._send_json({"bluetooth": to_jsonable(status)})
+                return
+            if parsed.path == "/api/beeper/trigger":
+                request = self._read_json()
+                pattern = request.get("pattern") if request else None
+                if not isinstance(pattern, str) or pattern not in PATTERNS:
+                    self._send_json(
+                        {"error": "Unknown or missing beeper pattern"},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                if demo:
+                    self._send_json(demo_state.beeper_payload())
+                else:
+                    status = beeper_service.trigger(pattern)
+                    response_status = HTTPStatus.OK if status.available else HTTPStatus.CONFLICT
+                    self._send_json(
+                        {"beeper": to_jsonable(status), "patterns": sorted(PATTERNS)},
+                        status=response_status,
+                    )
+                return
+            if parsed.path == "/api/beeper/mute":
+                request = self._read_json()
+                if request is None or not isinstance(request.get("muted"), bool):
+                    self._send_json(
+                        {"error": "Expected JSON object with boolean 'muted'"},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                if demo:
+                    demo_state.beeper_muted = request["muted"]
+                    self._send_json(demo_state.beeper_payload())
+                else:
+                    status = beeper_service.set_muted(request["muted"])
+                    self._send_json({"beeper": to_jsonable(status), "patterns": sorted(PATTERNS)})
                 return
             if parsed.path != "/api/scan":
                 self.send_error(HTTPStatus.NOT_FOUND)

@@ -157,7 +157,7 @@ def parse_access_points(output: str) -> tuple[WifiAccessPoint, ...]:
                 channel=_optional_int(fields[4]),
                 frequency_mhz=frequency_mhz,
                 signal_percent=_bounded_percent(fields[6]),
-                security=_optional(fields[7]),
+                security=_optional_security(fields[7]),
                 band=_frequency_band(frequency_mhz),
             )
         )
@@ -197,6 +197,11 @@ def _parse_radio_state(output: str) -> bool | None:
 def _optional(value: str) -> str | None:
     stripped = value.strip()
     return stripped or None
+
+
+def _optional_security(value: str) -> str | None:
+    security = _optional(value)
+    return None if security == "--" else security
 
 
 def _optional_int(value: str) -> int | None:
