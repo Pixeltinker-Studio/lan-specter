@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from math import sin
+from threading import Condition
 from time import monotonic
+from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
 from specter.core.diagnostics import ScanOptions, run_scan
@@ -110,6 +114,101 @@ class DemoState:
         }
 
 
+class ScanCoordinator:
+    """Serialize scans and let concurrent callers share a compatible result."""
+
+    def __init__(self, build_payload: Callable[[bool], dict]) -> None:
+        self._build_payload = build_payload
+        self._condition = Condition()
+        self._active = False
+        self._active_request: dict | None = None
+        self._completed_generation = 0
+        self._latest_full_analysis = False
+        self._latest_payload: dict | None = None
+        self._next_scan_id = 1
+
+    def run(self, *, full_analysis: bool) -> dict:
+        with self._condition:
+            observed_generation = self._completed_generation
+            while self._active:
+                self._condition.wait()
+                if self._completed_generation > observed_generation and (
+                    self._latest_full_analysis or not full_analysis
+                ):
+                    return copy.deepcopy(self._latest_payload)
+
+            scan_id = self._next_scan_id
+            self._next_scan_id += 1
+            started_at = _utc_now()
+            self._active = True
+            self._active_request = {
+                "scan_id": scan_id,
+                "status": "running",
+                "full_analysis": full_analysis,
+                "started_at": started_at,
+                "completed_at": None,
+            }
+
+        try:
+            payload = self._build_payload(full_analysis)
+        except Exception:
+            with self._condition:
+                self._active = False
+                self._active_request = None
+                self._condition.notify_all()
+            raise
+
+        request = {
+            "scan_id": scan_id,
+            "status": "completed",
+            "full_analysis": full_analysis,
+            "started_at": started_at,
+            "completed_at": _utc_now(),
+        }
+        payload = copy.deepcopy(payload)
+        payload["request"] = request
+
+        with self._condition:
+            self._completed_generation += 1
+            self._latest_full_analysis = full_analysis
+            self._latest_payload = copy.deepcopy(payload)
+            self._active = False
+            self._active_request = None
+            self._condition.notify_all()
+        return payload
+
+    def snapshot(self, *, mode: str) -> dict:
+        with self._condition:
+            if self._latest_payload is None:
+                return {
+                    "mode": mode,
+                    "ui": {"state": "boot"},
+                    "scan": None,
+                    "request": copy.deepcopy(self._active_request)
+                    or {
+                        "scan_id": None,
+                        "status": "idle",
+                        "full_analysis": False,
+                        "started_at": None,
+                        "completed_at": None,
+                    },
+                }
+
+            payload = copy.deepcopy(self._latest_payload)
+            if self._active_request is not None:
+                payload["request"] = copy.deepcopy(self._active_request)
+            return payload
+
+    @property
+    def active(self) -> bool:
+        with self._condition:
+            return self._active
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
 def _demo_latency(elapsed: float) -> float:
     return round(0.48 + sin(elapsed * 1.7) * 0.08 + sin(elapsed * 0.43) * 0.05, 3)
 
@@ -170,7 +269,22 @@ def serve(*, host: str = "127.0.0.1", port: int = 8765, demo: bool = False) -> i
     return 0
 
 
-def build_handler(*, options: WebUiOptions, demo: bool, demo_state: DemoState) -> type[BaseHTTPRequestHandler]:
+def build_handler(
+    *,
+    options: WebUiOptions,
+    demo: bool,
+    demo_state: DemoState,
+    scan_coordinator: ScanCoordinator | None = None,
+) -> type[BaseHTTPRequestHandler]:
+    coordinator = scan_coordinator or ScanCoordinator(
+        lambda full_analysis: build_scan_payload(
+            options=options,
+            demo=demo,
+            demo_state=demo_state,
+            full_analysis=full_analysis,
+        )
+    )
+
     class SpecterRequestHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
@@ -178,9 +292,7 @@ def build_handler(*, options: WebUiOptions, demo: bool, demo_state: DemoState) -
                 self._serve_static("index.html")
                 return
             if parsed.path == "/api/scan":
-                query = parse_qs(parsed.query)
-                full_analysis = query.get("full", ["0"])[0] == "1"
-                self._send_json(build_scan_payload(options=options, demo=demo, demo_state=demo_state, full_analysis=full_analysis))
+                self._send_json(coordinator.snapshot(mode="demo" if demo else "live"))
                 return
             if parsed.path == "/api/echo":
                 self._send_json(build_echo_payload(options=options, demo=demo, demo_state=demo_state))
@@ -190,12 +302,36 @@ def build_handler(*, options: WebUiOptions, demo: bool, demo_state: DemoState) -
                 return
             self.send_error(HTTPStatus.NOT_FOUND)
 
+        def do_POST(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/scan":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+
+            query = parse_qs(parsed.query)
+            full_analysis = query.get("full", ["0"])[0] == "1"
+            try:
+                payload = coordinator.run(full_analysis=full_analysis)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "mode": "demo" if demo else "live",
+                        "ui": {"state": "system_error"},
+                        "scan": None,
+                        "request": {"status": "failed", "full_analysis": full_analysis},
+                        "error": str(exc),
+                    },
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+            self._send_json(payload)
+
         def log_message(self, format: str, *args: object) -> None:
             return
 
-        def _send_json(self, payload: dict) -> None:
+        def _send_json(self, payload: dict, *, status: HTTPStatus = HTTPStatus.OK) -> None:
             body = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
-            self.send_response(HTTPStatus.OK)
+            self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))

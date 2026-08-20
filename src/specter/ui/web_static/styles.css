@@ -39,6 +39,13 @@ button {
   touch-action: manipulation;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.52;
+  filter: saturate(0.55);
+  transform: none;
+}
+
 .instrument {
   width: 100vw;
   height: 100vh;
@@ -443,6 +450,15 @@ button {
 .action:active,
 .softkey:active {
   background: rgba(156, 213, 139, 0.22);
+}
+
+.action:disabled,
+.softkey:disabled,
+.menu-tile:disabled {
+  border-color: var(--line);
+  background: rgba(143, 154, 143, 0.08);
+  color: var(--muted);
+  box-shadow: none;
 }
 
 .idle {

@@ -1,10 +1,63 @@
 import unittest
+from threading import Event, Thread
 
 from specter.core.results import Address, DiagnosticsResult, IpConfigResult, LinkResult, PingResult
-from specter.ui.web import DemoState, WebUiOptions, build_echo_payload, build_scan_payload, infer_ui_state
+from specter.ui.web import DemoState, ScanCoordinator, WebUiOptions, build_echo_payload, build_scan_payload, infer_ui_state
 
 
 class WebUiTests(unittest.TestCase):
+    def test_scan_coordinator_coalesces_concurrent_compatible_scans(self):
+        started = Event()
+        release = Event()
+        calls = []
+
+        def build_payload(full_analysis):
+            calls.append(full_analysis)
+            started.set()
+            self.assertTrue(release.wait(timeout=2))
+            return {"mode": "test", "ui": {"state": "ready"}, "scan": {"sequence": len(calls)}}
+
+        coordinator = ScanCoordinator(build_payload)
+        results = []
+        first = Thread(target=lambda: results.append(coordinator.run(full_analysis=False)))
+        second = Thread(target=lambda: results.append(coordinator.run(full_analysis=False)))
+
+        first.start()
+        self.assertTrue(started.wait(timeout=2))
+        second.start()
+        release.set()
+        first.join(timeout=2)
+        second.join(timeout=2)
+
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(calls, [False])
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["request"]["scan_id"], results[1]["request"]["scan_id"])
+        self.assertEqual(results[0]["request"]["status"], "completed")
+
+    def test_scan_coordinator_snapshot_reports_running_request(self):
+        started = Event()
+        release = Event()
+
+        def build_payload(full_analysis):
+            started.set()
+            self.assertTrue(release.wait(timeout=2))
+            return {"mode": "test", "ui": {"state": "result"}, "scan": {}}
+
+        coordinator = ScanCoordinator(build_payload)
+        worker = Thread(target=lambda: coordinator.run(full_analysis=True))
+        worker.start()
+        self.assertTrue(started.wait(timeout=2))
+
+        snapshot = coordinator.snapshot(mode="test")
+        self.assertEqual(snapshot["request"]["status"], "running")
+        self.assertTrue(snapshot["request"]["full_analysis"])
+
+        release.set()
+        worker.join(timeout=2)
+        self.assertEqual(coordinator.snapshot(mode="test")["request"]["status"], "completed")
+
     def test_demo_payload_uses_structured_technical_scan_data(self):
         state = DemoState()
         state.started_at -= 20

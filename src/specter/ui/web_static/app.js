@@ -11,12 +11,17 @@ const BOOT_DELAY_MS = 2600;
 const SCREENSAVER_DELAY_MS = Number(params.get("screensaver")) || 120000;
 const ECHO_REFRESH_MS = Number(params.get("echo")) || 5000;
 
-let latestPayload = null;
-let analysisRunning = false;
-let activeView = "boot";
+const uiState = {
+  latestPayload: null,
+  activeView: "boot",
+  operation: "idle",
+  scanPromise: null,
+  scanFullAnalysis: false,
+  scanRequestId: 0,
+  screensaverActive: false,
+};
 let analysisProgressTimer = null;
 let screensaverTimer = null;
-let screensaverActive = false;
 let echoSamples = [];
 
 function setClock() {
@@ -25,11 +30,11 @@ function setClock() {
 }
 
 function value(path, fallback = null) {
-  return path.reduce((current, key) => current && current[key] !== undefined ? current[key] : null, latestPayload) ?? fallback;
+  return path.reduce((current, key) => current && current[key] !== undefined ? current[key] : null, uiState.latestPayload) ?? fallback;
 }
 
 function scan() {
-  return latestPayload?.scan ?? {};
+  return uiState.latestPayload?.scan ?? {};
 }
 
 function link() {
@@ -102,8 +107,22 @@ function conditionText() {
 }
 
 function setActiveView(view) {
-  activeView = view;
+  uiState.activeView = view;
   updateFooter();
+  applyControlState();
+}
+
+function setOperation(operation) {
+  uiState.operation = operation;
+  applyControlState();
+}
+
+function applyControlState() {
+  const busy = uiState.operation !== "idle";
+  document.querySelectorAll("button").forEach((button) => {
+    button.disabled = busy;
+    button.setAttribute("aria-busy", busy ? "true" : "false");
+  });
 }
 
 function updateFooter() {
@@ -112,12 +131,12 @@ function updateFooter() {
   fieldStatus.textContent = field;
   entityStatus.textContent = entity;
   modeStatus.textContent =
-    activeView === "analysis" ? "ANALYSIS" :
-    activeView === "result" ? "RESULT" :
-    activeView === "menu" ? "MENU" :
-    activeView === "info" ? "INFO" :
-    activeView === "boot" ? "BOOT" :
-    activeView === "screensaver" ? "STANDBY" :
+    uiState.activeView === "analysis" ? "ANALYSIS" :
+    uiState.activeView === "result" ? "RESULT" :
+    uiState.activeView === "menu" ? "MENU" :
+    uiState.activeView === "info" ? "INFO" :
+    uiState.activeView === "boot" ? "BOOT" :
+    uiState.activeView === "screensaver" ? "STANDBY" :
     "READY";
 }
 
@@ -314,7 +333,16 @@ function entityScanScreen() {
       </section>
     </div>
   `;
-  setTimeout(() => fetchScan(false), 1400);
+}
+
+async function runEntityScan() {
+  if (uiState.scanPromise || uiState.screensaverActive) return;
+  entityScanScreen();
+  try {
+    await requestScan(false, { forceRender: true });
+  } catch {
+    errorScreen();
+  }
 }
 
 function diagnosticsScreen() {
@@ -418,7 +446,7 @@ function errorScreen() {
 
 function screensaverScreen() {
   clearInterval(analysisProgressTimer);
-  screensaverActive = true;
+  uiState.screensaverActive = true;
   app.classList.add("screensaver-mode");
   setActiveView("screensaver");
   screen.innerHTML = `
@@ -494,7 +522,7 @@ function echoCurveSvg() {
 }
 
 function render() {
-  if (!latestPayload || screensaverActive) return;
+  if (!uiState.latestPayload || uiState.screensaverActive) return;
   const state = value(["ui", "state"], "system_error");
   if (state === "no_link") {
     idleScreen();
@@ -512,20 +540,59 @@ function render() {
   updateFooter();
 }
 
-async function fetchScan(full = false) {
-  const response = await fetch(`/api/scan${full ? "?full=1" : ""}`, { cache: "no-store" });
-  latestPayload = await response.json();
-  render();
+function shouldRenderBackgroundScan() {
+  return ["boot", "idle", "ready", "fault"].includes(uiState.activeView);
+}
+
+async function requestScan(full = false, { forceRender = false } = {}) {
+  if (uiState.scanPromise) {
+    if (!full || uiState.scanFullAnalysis) return uiState.scanPromise;
+    try {
+      await uiState.scanPromise;
+    } catch {
+      // A requested full scan still gets its own attempt after a failed status scan.
+    }
+  }
+
+  const requestId = ++uiState.scanRequestId;
+  uiState.scanFullAnalysis = full;
+  setOperation(full ? "analysis" : "scan");
+
+  const pending = (async () => {
+    const response = await fetch(`/api/scan${full ? "?full=1" : ""}`, {
+      method: "POST",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload?.error ?? `Scan failed (${response.status})`);
+    if (requestId !== uiState.scanRequestId) return payload;
+
+    uiState.latestPayload = payload;
+    if (forceRender || shouldRenderBackgroundScan()) render();
+    return payload;
+  })();
+  uiState.scanPromise = pending;
+
+  try {
+    return await pending;
+  } finally {
+    if (uiState.scanPromise === pending) {
+      uiState.scanPromise = null;
+      uiState.scanFullAnalysis = false;
+      setOperation("idle");
+    }
+  }
 }
 
 async function fetchEcho() {
-  if (!latestPayload || analysisRunning || screensaverActive || activeView !== "ready") return;
+  if (!uiState.latestPayload || uiState.scanPromise || uiState.screensaverActive || uiState.activeView !== "ready") return;
   try {
     const response = await fetch("/api/echo", { cache: "no-store" });
     const payload = await response.json();
     const remotePing = payload?.echo?.remote_ping;
     if (!remotePing) return;
-    latestPayload.scan.remote_ping = remotePing;
+    uiState.latestPayload.scan.remote_ping = remotePing;
     render();
   } catch {
     // The full scan loop will surface persistent network errors.
@@ -533,35 +600,32 @@ async function fetchEcho() {
 }
 
 async function runAnalysis() {
-  if (analysisRunning || screensaverActive) return;
-  analysisRunning = true;
+  if (uiState.scanPromise || uiState.screensaverActive) return;
   analysisScreen();
   try {
-    await fetchScan(true);
+    await requestScan(true, { forceRender: true });
   } catch {
     errorScreen();
-  } finally {
-    analysisRunning = false;
   }
 }
 
 function resetScreensaverTimer() {
   clearTimeout(screensaverTimer);
-  if (!screensaverActive) {
+  if (!uiState.screensaverActive) {
     screensaverTimer = setTimeout(screensaverScreen, SCREENSAVER_DELAY_MS);
   }
 }
 
 function wakeFromScreensaver() {
-  if (!screensaverActive) return;
-  screensaverActive = false;
+  if (!uiState.screensaverActive) return;
+  uiState.screensaverActive = false;
   app.classList.remove("screensaver-mode");
   bootScreen();
-  setTimeout(() => fetchScan(false), BOOT_DELAY_MS);
+  setTimeout(() => requestScan(false, { forceRender: true }).catch(errorScreen), BOOT_DELAY_MS);
 }
 
 function registerActivity() {
-  if (screensaverActive) {
+  if (uiState.screensaverActive) {
     wakeFromScreensaver();
   }
   resetScreensaverTimer();
@@ -573,11 +637,11 @@ screen.addEventListener("click", (event) => {
   if (button.dataset.action === "analysis") {
     runAnalysis();
   } else if (button.dataset.action === "entity") {
-    entityScanScreen();
+    runEntityScan();
   } else if (button.dataset.action === "info") {
     infoScreen();
   } else if (button.dataset.action === "refresh") {
-    fetchScan(false);
+    requestScan(false, { forceRender: true }).catch(errorScreen);
   } else if (button.dataset.action === "menu") {
     menuScreen();
   } else if (button.dataset.action === "diagnostics") {
@@ -595,8 +659,10 @@ setClock();
 setInterval(setClock, 1000);
 bootScreen();
 resetScreensaverTimer();
-setTimeout(() => fetchScan(false), BOOT_DELAY_MS);
+setTimeout(() => requestScan(false, { forceRender: true }).catch(errorScreen), BOOT_DELAY_MS);
 setInterval(() => {
-  if (!analysisRunning && activeView !== "result" && activeView !== "menu" && activeView !== "info" && !screensaverActive) fetchScan(false);
+  if (!uiState.scanPromise && !["result", "menu", "info"].includes(uiState.activeView) && !uiState.screensaverActive) {
+    requestScan(false).catch(errorScreen);
+  }
 }, 30000);
 setInterval(fetchEcho, ECHO_REFRESH_MS);
