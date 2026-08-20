@@ -89,6 +89,15 @@ The Bluetooth entity finder listens for Bluetooth Low Energy advertisements thro
 
 The acoustic signal output is disabled until a BCM GPIO pin is explicitly configured. For a robust installation, drive the passive piezo through a small NPN transistor or logic-level MOSFET instead of treating a GPIO as a speaker output.
 
+For the low-power Murata PKM22EPP-40 used in the prototype, a direct GPIO test connection can use a permanent 1 kOhm series resistor:
+
+```text
+GPIO18 --- 1 kOhm --- PIEZO +
+GND ---------------- PIEZO -
+```
+
+To attenuate the output mechanically, add a 10 kOhm linear potentiometer as a rheostat in series after the permanent resistor. Connect the wiper to one of the used outer terminals so a poor wiper contact does not interrupt the circuit. Do not replace or bypass the fixed 1 kOhm GPIO protection resistor, and never connect the piezo between 5 V and a GPIO.
+
 Recommended reference circuit for a low-voltage passive piezo:
 
 ```text

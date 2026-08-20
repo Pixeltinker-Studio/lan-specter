@@ -11,6 +11,9 @@ const BOOT_DELAY_MS = 2600;
 const SCREENSAVER_DELAY_MS = Number(params.get("screensaver")) || 120000;
 const ECHO_REFRESH_MS = Number(params.get("echo")) || 5000;
 const BLUETOOTH_REFRESH_MS = Number(params.get("bluetooth")) || 1000;
+const BLUETOOTH_BEEP_MIN_MS = 180;
+const BLUETOOTH_BEEP_MAX_MS = 1800;
+const BLUETOOTH_TARGET_MAX_AGE_SECONDS = 3;
 
 const uiState = {
   latestPayload: null,
@@ -31,6 +34,7 @@ const uiState = {
   bluetoothTarget: null,
   bluetoothRequest: null,
   bluetoothControlRequest: null,
+  bluetoothUpdatedAtMs: 0,
   bluetoothScrollTop: 0,
   bluetoothRenderPending: false,
   pointerActive: false,
@@ -39,6 +43,7 @@ const uiState = {
 };
 let analysisProgressTimer = null;
 let screensaverTimer = null;
+let bluetoothBeeperTimer = null;
 let echoSamples = [];
 
 function setClock() {
@@ -134,6 +139,7 @@ function conditionText() {
 
 function setActiveView(view) {
   uiState.activeView = view;
+  if (view !== "bluetooth") stopBluetoothBeeper();
   updateFooter();
   applyControlState();
 }
@@ -203,6 +209,47 @@ function bluetoothFieldLabel(rssi) {
   if (rssi >= -67) return "FIELD STRONG";
   if (rssi >= -78) return "FIELD PRESENT";
   return "FIELD FAINT";
+}
+
+function bluetoothBeepIntervalMs(rssi) {
+  const normalized = Math.max(0, Math.min(1, (Number(rssi) + 100) / 65));
+  const ratio = BLUETOOTH_BEEP_MIN_MS / BLUETOOTH_BEEP_MAX_MS;
+  return Math.round(BLUETOOTH_BEEP_MAX_MS * Math.pow(ratio, normalized));
+}
+
+function currentBluetoothTarget() {
+  return uiState.bluetooth?.devices?.find((device) => device.address === uiState.bluetoothTarget) ?? null;
+}
+
+function bluetoothTargetAgeSeconds(target) {
+  const snapshotAge = Number(target?.age_seconds);
+  const elapsedSinceUpdate = uiState.bluetoothUpdatedAtMs
+    ? Math.max(0, Date.now() - uiState.bluetoothUpdatedAtMs) / 1000
+    : 0;
+  return (Number.isFinite(snapshotAge) ? snapshotAge : Infinity) + elapsedSinceUpdate;
+}
+
+function stopBluetoothBeeper() {
+  if (bluetoothBeeperTimer !== null) clearTimeout(bluetoothBeeperTimer);
+  bluetoothBeeperTimer = null;
+}
+
+function scheduleBluetoothBeeper() {
+  if (bluetoothBeeperTimer !== null) return;
+  const target = currentBluetoothTarget();
+  const canTrack = uiState.activeView === "bluetooth"
+    && uiState.bluetooth?.running === true
+    && target !== null
+    && bluetoothTargetAgeSeconds(target) <= BLUETOOTH_TARGET_MAX_AGE_SECONDS;
+  if (!canTrack) return;
+
+  bluetoothBeeperTimer = setTimeout(() => {
+    bluetoothBeeperTimer = null;
+    const currentTarget = currentBluetoothTarget();
+    if (!currentTarget || bluetoothTargetAgeSeconds(currentTarget) > BLUETOOTH_TARGET_MAX_AGE_SECONDS) return;
+    triggerBeeper("scan_tick");
+    scheduleBluetoothBeeper();
+  }, bluetoothBeepIntervalMs(target.smoothed_rssi));
 }
 
 function subsystemRows() {
@@ -693,10 +740,9 @@ async function requestBluetooth({ background = false } = {}) {
       const response = await fetch("/api/bluetooth", { cache: "no-store", headers: { Accept: "application/json" } });
       const payload = await response.json();
       uiState.bluetooth = payload.bluetooth ?? null;
+      uiState.bluetoothUpdatedAtMs = Date.now();
       uiState.bluetoothError = response.ok ? null : payload.error ?? `Bluetooth request failed (${response.status})`;
-      if (uiState.bluetoothTarget && uiState.bluetooth?.devices?.some((device) => device.address === uiState.bluetoothTarget)) {
-        triggerBeeper("scan_tick");
-      }
+      scheduleBluetoothBeeper();
       renderBluetoothWhenIdle();
       return payload;
     } catch (error) {
@@ -726,7 +772,10 @@ async function setBluetoothScanning(enabled) {
     });
     const payload = await response.json();
     uiState.bluetooth = payload.bluetooth ?? uiState.bluetooth;
+    uiState.bluetoothUpdatedAtMs = Date.now();
     if (!response.ok) uiState.bluetoothError = payload.error ?? `Bluetooth change failed (${response.status})`;
+    if (uiState.bluetooth?.running) scheduleBluetoothBeeper();
+    else stopBluetoothBeeper();
     return payload;
   })();
   uiState.bluetoothControlRequest = pending;
@@ -1148,6 +1197,8 @@ screen.addEventListener("click", (event) => {
   } else if (button.dataset.action === "bluetooth-target") {
     uiState.bluetoothTarget = button.dataset.address;
     bluetoothScreen();
+    stopBluetoothBeeper();
+    scheduleBluetoothBeeper();
   } else if (button.dataset.action === "beeper") {
     openBeeperScreen();
   } else if (button.dataset.action === "beeper-test") {
