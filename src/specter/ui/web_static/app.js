@@ -14,8 +14,6 @@ const BLUETOOTH_REFRESH_MS = Number(params.get("bluetooth")) || 1000;
 const BLUETOOTH_BEEP_MIN_MS = 180;
 const BLUETOOTH_BEEP_MAX_MS = 1800;
 const BLUETOOTH_TARGET_MAX_AGE_SECONDS = 3;
-const SONAR_BASE_DURATION_SECONDS = 1.8;
-const SONAR_SPEED_TRANSITION_MS = 500;
 
 const uiState = {
   latestPayload: null,
@@ -249,38 +247,28 @@ function scheduleBluetoothBeeper() {
     bluetoothBeeperTimer = null;
     const currentTarget = currentBluetoothTarget();
     if (!currentTarget || bluetoothTargetAgeSeconds(currentTarget) > BLUETOOTH_TARGET_MAX_AGE_SECONDS) return;
+    pulseBluetoothSonar(bluetoothBeepIntervalMs(currentTarget.smoothed_rssi));
     triggerBeeper("scan_tick");
     scheduleBluetoothBeeper();
   }, bluetoothBeepIntervalMs(target.smoothed_rssi));
 }
 
-function updateSonarVisual(sonar, pulseDuration, signalLevel) {
+function updateSonarSignal(sonar, signalLevel) {
   if (!sonar) return;
   sonar.style.setProperty("--signal-level", `${Math.round(signalLevel * 100)}%`);
+}
 
-  const animations = [...sonar.querySelectorAll("span")]
-    .flatMap((ring) => typeof ring.getAnimations === "function" ? ring.getAnimations() : []);
-  if (!animations.length) {
-    sonar.style.setProperty("--pulse-duration", `${pulseDuration}s`);
-    return;
-  }
-
-  const targetRate = SONAR_BASE_DURATION_SECONDS / pulseDuration;
-  const initialRate = Number(sonar.dataset.playbackRate) || animations[0].playbackRate || 1;
-  const transitionId = String((Number(sonar.dataset.transitionId) || 0) + 1);
-  const startedAt = performance.now();
-  sonar.dataset.transitionId = transitionId;
-
-  const updateRate = (now) => {
-    if (sonar.dataset.transitionId !== transitionId) return;
-    const progress = Math.min(1, (now - startedAt) / SONAR_SPEED_TRANSITION_MS);
-    const eased = 1 - Math.pow(1 - progress, 3);
-    const rate = initialRate + ((targetRate - initialRate) * eased);
-    animations.forEach((animation) => animation.updatePlaybackRate(rate));
-    sonar.dataset.playbackRate = String(rate);
-    if (progress < 1) requestAnimationFrame(updateRate);
-  };
-  requestAnimationFrame(updateRate);
+function pulseBluetoothSonar(intervalMs) {
+  const sonar = uiState.activeView === "bluetooth" ? screen.querySelector(".sonar") : null;
+  if (!sonar) return;
+  const durationMs = Math.max(90, Math.min(600, intervalMs * 0.6));
+  const ringDelayMs = Math.min(80, intervalMs * 0.12);
+  sonar.style.setProperty("--finder-pulse-duration", `${Math.round(durationMs)}ms`);
+  sonar.style.setProperty("--finder-ring-delay-2", `${Math.round(ringDelayMs)}ms`);
+  sonar.style.setProperty("--finder-ring-delay-3", `${Math.round(ringDelayMs * 2)}ms`);
+  sonar.classList.remove("pulse");
+  void sonar.offsetWidth;
+  sonar.classList.add("pulse");
 }
 
 function subsystemRows() {
@@ -707,7 +695,6 @@ function bluetoothScreen() {
   const target = devices.find((device) => device.address === uiState.bluetoothTarget) ?? null;
   const targetSignal = target?.smoothed_rssi ?? -100;
   const normalizedSignal = Math.max(0, Math.min(1, (targetSignal + 100) / 65));
-  const pulseDuration = (1.8 - normalizedSignal * 1.4).toFixed(2);
   const deviceRows = devices.length
     ? devices.map((device) => {
       const fieldLabel = bluetoothFieldLabel(device.smoothed_rssi);
@@ -774,7 +761,7 @@ function bluetoothScreen() {
   if (reading) reading.textContent = finderValue;
   if (field) field.textContent = finderField;
   if (scanButton) scanButton.textContent = scanLabel;
-  updateSonarVisual(layout?.querySelector(".sonar"), Number(pulseDuration), normalizedSignal);
+  updateSonarSignal(layout?.querySelector(".sonar"), normalizedSignal);
   if (list) list.scrollTop = uiState.bluetoothScrollTop;
   applyControlState();
 }
