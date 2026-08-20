@@ -176,6 +176,10 @@ button:disabled {
   transform: translateY(1px);
 }
 
+.softkey[hidden] {
+  display: none;
+}
+
 .screen-title {
   color: var(--green);
   font-size: 30px;
@@ -618,6 +622,19 @@ button:disabled {
   overflow: hidden;
 }
 
+.menu-grid,
+.wifi-list,
+.bluetooth-list,
+.wifi-controls,
+.finder-panel,
+.beeper-controls {
+  scrollbar-color: var(--green) var(--line-soft);
+  scrollbar-width: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
 .menu-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -626,24 +643,34 @@ button:disabled {
   align-content: start;
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
   padding-right: 10px;
-  scrollbar-color: var(--green) var(--line-soft);
-  scrollbar-width: auto;
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
 }
 
-.menu-grid::-webkit-scrollbar {
+.menu-grid::-webkit-scrollbar,
+.wifi-list::-webkit-scrollbar,
+.bluetooth-list::-webkit-scrollbar,
+.wifi-controls::-webkit-scrollbar,
+.finder-panel::-webkit-scrollbar,
+.beeper-controls::-webkit-scrollbar {
   width: 12px;
 }
 
-.menu-grid::-webkit-scrollbar-track {
+.menu-grid::-webkit-scrollbar-track,
+.wifi-list::-webkit-scrollbar-track,
+.bluetooth-list::-webkit-scrollbar-track,
+.wifi-controls::-webkit-scrollbar-track,
+.finder-panel::-webkit-scrollbar-track,
+.beeper-controls::-webkit-scrollbar-track {
   border: 1px solid var(--line);
   background: var(--line-soft);
 }
 
-.menu-grid::-webkit-scrollbar-thumb {
+.menu-grid::-webkit-scrollbar-thumb,
+.wifi-list::-webkit-scrollbar-thumb,
+.bluetooth-list::-webkit-scrollbar-thumb,
+.wifi-controls::-webkit-scrollbar-thumb,
+.finder-panel::-webkit-scrollbar-thumb,
+.beeper-controls::-webkit-scrollbar-thumb {
   border: 2px solid var(--line-soft);
   border-radius: 6px;
   background: var(--green);
@@ -692,15 +719,20 @@ button:disabled {
 }
 
 .wifi-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
 .wifi-list {
+  min-height: 0;
+  flex: 1;
   display: grid;
+  align-content: start;
   gap: 7px;
-  max-height: 410px;
   overflow-y: auto;
-  padding-right: 6px;
+  padding-right: 10px;
 }
 
 .wifi-row {
@@ -767,9 +799,18 @@ button:disabled {
 }
 
 .wifi-controls {
+  min-height: 0;
   display: grid;
   align-content: start;
   gap: 12px;
+  overflow-y: auto;
+}
+
+.wifi-controls .condition,
+.wifi-controls .readout,
+.beeper-controls .condition,
+.beeper-controls .readout {
+  margin-top: 0;
 }
 
 .wifi-controls .action {
@@ -784,15 +825,43 @@ button:disabled {
   color: var(--muted);
 }
 
+.activity-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: var(--cyan);
+  font-size: 12px;
+}
+
+.activity-line span {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--cyan);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: activity-spin 0.8s linear infinite;
+}
+
+@keyframes activity-spin {
+  to { transform: rotate(360deg); }
+}
+
 .bluetooth-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
 .bluetooth-list {
+  min-height: 0;
+  flex: 1;
   display: grid;
+  align-content: start;
   gap: 8px;
-  max-height: 410px;
   overflow-y: auto;
+  padding-right: 10px;
 }
 
 .bluetooth-row {
@@ -847,14 +916,6 @@ button:disabled {
   text-align: center;
 }
 
-.bluetooth-trend.approaching {
-  color: var(--green);
-}
-
-.bluetooth-trend.receding {
-  color: var(--amber);
-}
-
 .bluetooth-rssi {
   text-align: right;
 }
@@ -865,11 +926,13 @@ button:disabled {
 }
 
 .finder-panel {
+  min-height: 0;
   display: grid;
   align-content: start;
   justify-items: stretch;
   gap: 12px;
   text-align: center;
+  overflow-y: auto;
 }
 
 .finder-name {
@@ -943,15 +1006,9 @@ button:disabled {
   font-size: 28px;
 }
 
-.finder-reading span,
-.finder-disclaimer {
+.finder-reading span {
   color: var(--muted);
   font-size: 11px;
-}
-
-.finder-disclaimer {
-  margin: 0;
-  color: var(--amber);
 }
 
 .finder-panel .action {
@@ -970,9 +1027,11 @@ button:disabled {
 }
 
 .beeper-controls {
+  min-height: 0;
   display: grid;
   align-content: start;
   gap: 12px;
+  overflow-y: auto;
 }
 
 .beeper-controls .action {
@@ -1224,6 +1283,173 @@ button:disabled {
 @keyframes trace-carriage {
   0% { transform: translateX(0); opacity: 0.22; }
   100% { transform: translateX(760px); opacity: 0.5; }
+}
+
+/* Native SPECTER display: 1024 x 600 landscape. */
+@media (max-height: 650px) {
+  .instrument {
+    grid-template-rows: 52px 1fr 62px;
+  }
+
+  .topbar {
+    padding: 0 18px;
+  }
+
+  .viewport {
+    padding: 12px 18px;
+  }
+
+  .statusbar {
+    gap: 14px;
+    padding: 6px 14px;
+  }
+
+  .statusbar div {
+    min-width: 160px;
+  }
+
+  .statusbar strong {
+    margin-top: 2px;
+    font-size: 16px;
+  }
+
+  .softkey {
+    min-height: 44px;
+  }
+
+  .grid,
+  .ready-layout,
+  .analysis-layout,
+  .result-layout,
+  .menu-layout,
+  .wifi-layout,
+  .bluetooth-layout,
+  .beeper-layout,
+  .fault-layout {
+    gap: 14px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .panel-heading {
+    gap: 3px;
+    margin-bottom: 8px;
+  }
+
+  .screen-title {
+    margin-bottom: 8px;
+    font-size: 24px;
+  }
+
+  .menu-panel {
+    padding: 14px;
+  }
+
+  .menu-grid {
+    gap: 10px;
+  }
+
+  .menu-tile {
+    min-height: 104px;
+    gap: 4px;
+    padding: 10px 12px;
+  }
+
+  .menu-tile strong {
+    font-size: 18px;
+  }
+
+  .menu-tile em {
+    font-size: 11px;
+  }
+
+  .menu-scroll-hint {
+    padding-top: 6px;
+  }
+
+  .condition {
+    padding-top: 10px;
+  }
+
+  .condition strong {
+    margin-top: 4px;
+    font-size: 26px;
+  }
+
+  .readout {
+    margin-top: 10px;
+    padding: 10px;
+  }
+
+  .readout strong {
+    margin-top: 4px;
+    font-size: 17px;
+  }
+
+  .action,
+  .action-primary {
+    min-height: 50px;
+    font-size: 16px;
+  }
+
+  .wifi-layout {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+
+  .bluetooth-layout {
+    grid-template-columns: minmax(0, 1fr) 286px;
+  }
+
+  .beeper-layout {
+    grid-template-columns: minmax(0, 1fr) 270px;
+  }
+
+  .wifi-controls,
+  .finder-panel,
+  .beeper-controls {
+    gap: 8px;
+  }
+
+  .wifi-controls .action,
+  .finder-panel .action,
+  .beeper-controls .action {
+    min-height: 48px;
+    font-size: 14px;
+  }
+
+  .wifi-row,
+  .bluetooth-row {
+    min-height: 54px;
+  }
+
+  .finder-name {
+    min-height: 26px;
+    font-size: 16px;
+  }
+
+  .sonar {
+    width: 132px;
+    height: 132px;
+    margin: 0 auto;
+  }
+
+  .sonar span:nth-child(1) { inset: 48px; }
+  .sonar span:nth-child(2) { inset: 31px; }
+  .sonar span:nth-child(3) { inset: 14px; }
+
+  .finder-reading strong {
+    font-size: 22px;
+  }
+
+  .beeper-tests {
+    gap: 10px;
+  }
+
+  .beeper-tests .menu-tile {
+    min-height: 88px;
+  }
 }
 
 @media (max-width: 820px) {

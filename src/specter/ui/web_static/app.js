@@ -10,6 +10,7 @@ const params = new URLSearchParams(window.location.search);
 const BOOT_DELAY_MS = 2600;
 const SCREENSAVER_DELAY_MS = Number(params.get("screensaver")) || 120000;
 const ECHO_REFRESH_MS = Number(params.get("echo")) || 5000;
+const BLUETOOTH_REFRESH_MS = Number(params.get("bluetooth")) || 1000;
 
 const uiState = {
   latestPayload: null,
@@ -22,10 +23,17 @@ const uiState = {
   wifi: null,
   wifiError: null,
   wifiConfirmOff: false,
+  wifiRequest: null,
+  wifiControlRequest: null,
+  wifiScrollTop: 0,
   bluetooth: null,
   bluetoothError: null,
   bluetoothTarget: null,
   bluetoothRequest: null,
+  bluetoothControlRequest: null,
+  bluetoothScrollTop: 0,
+  bluetoothRenderPending: false,
+  pointerActive: false,
   beeper: null,
   beeperError: null,
 };
@@ -136,10 +144,14 @@ function setOperation(operation) {
 }
 
 function applyControlState() {
-  const busy = uiState.operation !== "idle";
   document.querySelectorAll("button").forEach((button) => {
+    const action = button.dataset.action;
     const requiresWifi = button.dataset.requiresWifi === "true";
     const requiresBeeper = button.dataset.requiresBeeper === "true";
+    const busy = (["analysis", "entity", "refresh"].includes(action) && uiState.scanPromise !== null)
+      || (["wifi-rescan", "wifi-toggle"].includes(action) && (uiState.wifiRequest !== null || uiState.wifiControlRequest !== null))
+      || (action === "bluetooth-scan" && uiState.bluetoothControlRequest !== null)
+      || (action === "beeper-mute" && uiState.operation === "beeper");
     button.disabled = busy
       || (requiresWifi && uiState.wifi?.radio_enabled !== true)
       || (requiresBeeper && uiState.beeper?.available !== true);
@@ -152,10 +164,12 @@ function updateFooter() {
   const entity = ping("remote_ping")?.reachable ? "RE-01" : "UNRESOLVED";
   fieldStatus.textContent = field;
   entityStatus.textContent = entity;
+  menuButton.hidden = uiState.activeView === "menu" || uiState.activeView === "boot" || uiState.activeView === "screensaver";
   modeStatus.textContent =
     uiState.activeView === "analysis" ? "ANALYSIS" :
     uiState.activeView === "result" ? "RESULT" :
     uiState.activeView === "menu" ? "MENU" :
+    uiState.activeView === "diagnostics" ? "REGISTER" :
     uiState.activeView === "wifi" ? "WLAN" :
     uiState.activeView === "bluetooth" ? "BT FINDER" :
     uiState.activeView === "beeper" ? "ACOUSTIC" :
@@ -163,6 +177,30 @@ function updateFooter() {
     uiState.activeView === "boot" ? "BOOT" :
     uiState.activeView === "screensaver" ? "STANDBY" :
     "READY";
+  updateHomeStatus();
+}
+
+function updateHomeStatus() {
+  const homeField = document.querySelector("#home-field-status");
+  const homeEntity = document.querySelector("#home-entity-status");
+  if (homeField) homeField.textContent = link().link_detected ? "LOCKED" : uiState.latestPayload ? "COLLAPSED" : "CALIBRATING";
+  if (homeEntity) homeEntity.textContent = ping("remote_ping")?.reachable ? "RE-01 ACQUIRED" : uiState.latestPayload ? "UNRESOLVED" : "CALIBRATING";
+}
+
+function wifiFieldLabel(signal) {
+  if (signal === null || signal === undefined) return "FIELD UNKNOWN";
+  if (signal >= 80) return "FIELD INTENSE";
+  if (signal >= 60) return "FIELD STRONG";
+  if (signal >= 40) return "FIELD PRESENT";
+  return "FIELD FAINT";
+}
+
+function bluetoothFieldLabel(rssi) {
+  if (rssi === null || rssi === undefined) return "FIELD UNKNOWN";
+  if (rssi >= -55) return "FIELD INTENSE";
+  if (rssi >= -67) return "FIELD STRONG";
+  if (rssi >= -78) return "FIELD PRESENT";
+  return "FIELD FAINT";
 }
 
 function subsystemRows() {
@@ -227,7 +265,6 @@ function faultScreen(title, message, reference, action = "RETRY") {
         <p class="label">CORRECTIVE ACTION</p>
         <div class="actions">
           <button class="action" type="button" data-action="refresh">${action}</button>
-          <button class="action secondary" type="button" data-action="menu">OPEN MENU</button>
         </div>
       </aside>
     </div>
@@ -294,30 +331,30 @@ function menuScreen() {
             <strong>ENTITY SCAN</strong>
             <em>Acquire RE-01 presence</em>
           </button>
-          <button class="menu-tile" type="button" data-action="info">
+          <button class="menu-tile" type="button" data-action="wifi">
             <span>03</span>
-            <strong>UNIT PLATE</strong>
-            <em>Boot and identity register</em>
+            <strong>WLAN SPECTRUM</strong>
+            <em>Survey nearby radio fields</em>
+          </button>
+          <button class="menu-tile" type="button" data-action="bluetooth">
+            <span>04</span>
+            <strong>BT FIELD FINDER</strong>
+            <em>Track live BLE field strength</em>
+          </button>
+          <button class="menu-tile" type="button" data-action="beeper">
+            <span>05</span>
+            <strong>ACOUSTIC SIGNALS</strong>
+            <em>Piezo status, mute and test</em>
           </button>
           <button class="menu-tile" type="button" data-action="diagnostics">
-            <span>04</span>
+            <span>06</span>
             <strong>DIAGNOSTICS</strong>
             <em>Technical register view</em>
           </button>
-          <button class="menu-tile" type="button" data-action="wifi">
-            <span>05</span>
-            <strong>WLAN SPECTRUM</strong>
-            <em>Radio state and nearby fields</em>
-          </button>
-          <button class="menu-tile" type="button" data-action="bluetooth">
-            <span>06</span>
-            <strong>BT ENTITY FINDER</strong>
-            <em>Live BLE advertisement tracking</em>
-          </button>
-          <button class="menu-tile" type="button" data-action="beeper">
+          <button class="menu-tile" type="button" data-action="info">
             <span>07</span>
-            <strong>ACOUSTIC SIGNALS</strong>
-            <em>Piezo status, mute and test</em>
+            <strong>UNIT PLATE</strong>
+            <em>Boot and identity register</em>
           </button>
         </div>
         <div class="menu-scroll-hint" aria-hidden="true">SWIPE TO VIEW ALL FUNCTIONS</div>
@@ -326,9 +363,12 @@ function menuScreen() {
         <p class="label">UNIT STATUS</p>
         <div class="readout">
           <span>FIELD</span>
-          <strong>${link().link_detected ? "LOCKED" : "COLLAPSED"}</strong>
+          <strong id="home-field-status">${link().link_detected ? "LOCKED" : uiState.latestPayload ? "COLLAPSED" : "CALIBRATING"}</strong>
         </div>
-        <button class="action secondary" type="button" data-action="refresh">RETURN</button>
+        <div class="readout">
+          <span>ENTITY</span>
+          <strong id="home-entity-status">${ping("remote_ping")?.reachable ? "RE-01 ACQUIRED" : uiState.latestPayload ? "UNRESOLVED" : "CALIBRATING"}</strong>
+        </div>
       </aside>
     </div>
   `;
@@ -351,7 +391,6 @@ function infoScreen() {
       <section class="boot-list">
         <h2 class="screen-title">UNIT PLATE</h2>
         ${subsystemRows()}
-        <button class="action secondary" type="button" data-action="menu">RETURN TO MENU</button>
       </section>
     </div>
   `;
@@ -387,7 +426,7 @@ async function runEntityScan() {
 }
 
 function diagnosticsScreen() {
-  setActiveView("menu");
+  setActiveView("diagnostics");
   screen.innerHTML = `
     <div class="fault-layout">
       <section class="panel">
@@ -404,15 +443,19 @@ function diagnosticsScreen() {
         </div>
       </section>
       <aside class="panel panel-compact">
-        <p class="label">REGISTER CONTROL</p>
-        <button class="action" type="button" data-action="menu">MENU</button>
-        <button class="action secondary" type="button" data-action="refresh">RETURN</button>
+        <p class="label">REGISTER SOURCE</p>
+        <div class="readout">
+          <span>RECORD</span>
+          <strong>${uiState.latestPayload ? "CURRENT SCAN" : "NO SCAN DATA"}</strong>
+        </div>
       </aside>
     </div>
   `;
 }
 
 function wifiScreen() {
+  const previousList = screen.querySelector(".wifi-list");
+  if (previousList) uiState.wifiScrollTop = previousList.scrollTop;
   setActiveView("wifi");
   const wifi = uiState.wifi;
   const radioText = wifi?.radio_enabled === true ? "ENABLED" : wifi?.radio_enabled === false ? "DISABLED" : "UNKNOWN";
@@ -422,6 +465,7 @@ function wifiScreen() {
     ? accessPoints.slice(0, 10).map((accessPoint) => {
       const signal = accessPoint.signal_percent;
       const signalText = signal === null || signal === undefined ? "--" : `${signal}%`;
+      const fieldLabel = wifiFieldLabel(signal);
       const identity = accessPoint.ssid || "<HIDDEN SSID>";
       return `
         <div class="wifi-row ${accessPoint.in_use ? "connected" : ""}">
@@ -430,18 +474,22 @@ function wifiScreen() {
             <span>${escapeHtml(accessPoint.bssid)} · ${escapeHtml(accessPoint.band ?? "unknown band")} · CH ${escapeHtml(accessPoint.channel ?? "--")}</span>
           </div>
           <div class="wifi-security">${escapeHtml(accessPoint.security || "OPEN")}</div>
-          <div class="wifi-signal" aria-label="Signal ${escapeHtml(signalText)}">
+          <div class="wifi-signal" aria-label="${escapeHtml(fieldLabel)}, signal ${escapeHtml(signalText)}">
             <span style="width: ${signal ?? 0}%"></span>
-            <strong>${escapeHtml(signalText)}</strong>
+            <strong>${escapeHtml(fieldLabel.replace("FIELD ", ""))} / ${escapeHtml(signalText)}</strong>
           </div>
         </div>
       `;
     }).join("")
     : `<div class="wifi-empty">${wifi ? "NO ACCESS POINTS MEASURED" : "READING WLAN INSTRUMENT..."}</div>`;
   const error = uiState.wifiError || wifi?.error;
-  const toggleLabel = wifi?.radio_enabled === true
-    ? (uiState.wifiConfirmOff ? "CONFIRM WIFI OFF" : "TURN WIFI OFF")
-    : "TURN WIFI ON";
+  const scanning = uiState.wifiRequest !== null;
+  const switching = uiState.wifiControlRequest !== null;
+  const toggleLabel = switching
+    ? "CALIBRATING RADIO..."
+    : wifi?.radio_enabled === true
+      ? (uiState.wifiConfirmOff ? "CONFIRM WIFI OFF" : "TURN WIFI OFF")
+      : "TURN WIFI ON";
   const toggleButton = wifi?.adapter_available || wifi?.radio_enabled !== null
     ? `<button class="action secondary" type="button" data-action="wifi-toggle">${toggleLabel}</button>`
     : "";
@@ -454,6 +502,7 @@ function wifiScreen() {
           <h2 class="screen-title">WLAN SPECTRUM</h2>
         </div>
         ${error ? `<div class="inline-error">${escapeHtml(error)}</div>` : ""}
+        ${scanning ? `<div class="activity-line"><span></span>RADIO FIELD SWEEP ACTIVE</div>` : ""}
         <div class="wifi-list">${rows}</div>
       </section>
       <aside class="panel panel-compact wifi-controls">
@@ -469,20 +518,20 @@ function wifiScreen() {
           <span>MEASURED FIELDS</span>
           <strong>${accessPoints.length}</strong>
         </div>
-        <button class="action" type="button" data-action="wifi-rescan" data-requires-wifi="true">RESCAN</button>
+        <button class="action" type="button" data-action="wifi-rescan" data-requires-wifi="true">${scanning ? "SCANNING..." : "SCAN WLAN FIELDS"}</button>
         ${toggleButton}
-        <button class="action secondary" type="button" data-action="menu">RETURN TO MENU</button>
       </aside>
     </div>
   `;
+  const list = screen.querySelector(".wifi-list");
+  if (list) list.scrollTop = uiState.wifiScrollTop;
   applyControlState();
 }
 
 async function requestWifi({ rescan = false } = {}) {
-  if (uiState.operation !== "idle") return;
-  setOperation("wifi");
+  if (uiState.wifiRequest) return uiState.wifiRequest;
   uiState.wifiError = null;
-  try {
+  const pending = (async () => {
     const response = await fetch(rescan ? "/api/wifi/scan" : "/api/wifi", {
       method: rescan ? "POST" : "GET",
       cache: "no-store",
@@ -491,19 +540,25 @@ async function requestWifi({ rescan = false } = {}) {
     const payload = await response.json();
     uiState.wifi = payload.wifi ?? null;
     if (!response.ok) uiState.wifiError = payload.error ?? `WLAN request failed (${response.status})`;
+    return payload;
+  })();
+  uiState.wifiRequest = pending;
+  if (uiState.activeView === "wifi") wifiScreen();
+  try {
+    return await pending;
   } catch (error) {
     uiState.wifiError = error instanceof Error ? error.message : "WLAN request failed";
+    return null;
   } finally {
-    setOperation("idle");
-    wifiScreen();
+    if (uiState.wifiRequest === pending) uiState.wifiRequest = null;
+    if (uiState.activeView === "wifi") wifiScreen();
   }
 }
 
 async function setWifiRadio(enabled) {
-  if (uiState.operation !== "idle") return;
-  setOperation("wifi");
+  if (uiState.wifiControlRequest || uiState.wifiRequest) return;
   uiState.wifiError = null;
-  try {
+  const pending = (async () => {
     const response = await fetch("/api/wifi/radio", {
       method: "POST",
       cache: "no-store",
@@ -513,12 +568,19 @@ async function setWifiRadio(enabled) {
     const payload = await response.json();
     uiState.wifi = payload.wifi ?? uiState.wifi;
     if (!response.ok) uiState.wifiError = payload.error ?? `WLAN change failed (${response.status})`;
+    return payload;
+  })();
+  uiState.wifiControlRequest = pending;
+  if (uiState.activeView === "wifi") wifiScreen();
+  try {
+    return await pending;
   } catch (error) {
     uiState.wifiError = error instanceof Error ? error.message : "WLAN change failed";
+    return null;
   } finally {
+    if (uiState.wifiControlRequest === pending) uiState.wifiControlRequest = null;
     uiState.wifiConfirmOff = false;
-    setOperation("idle");
-    wifiScreen();
+    if (uiState.activeView === "wifi") wifiScreen();
   }
 }
 
@@ -533,13 +595,14 @@ function toggleWifiRadio() {
 }
 
 function openWifiScreen() {
-  if (uiState.operation !== "idle") return;
   uiState.wifiConfirmOff = false;
   wifiScreen();
   requestWifi();
 }
 
 function bluetoothScreen() {
+  const previousList = screen.querySelector(".bluetooth-list");
+  if (previousList) uiState.bluetoothScrollTop = previousList.scrollTop;
   setActiveView("bluetooth");
   const bluetooth = uiState.bluetooth;
   const devices = bluetooth?.devices ?? [];
@@ -548,18 +611,22 @@ function bluetoothScreen() {
   const normalizedSignal = Math.max(0, Math.min(1, (targetSignal + 100) / 65));
   const pulseDuration = (1.8 - normalizedSignal * 1.4).toFixed(2);
   const deviceRows = devices.length
-    ? devices.map((device) => `
+    ? devices.map((device) => {
+      const fieldLabel = bluetoothFieldLabel(device.smoothed_rssi);
+      return `
       <button class="bluetooth-row ${device.address === uiState.bluetoothTarget ? "target" : ""}" type="button" data-action="bluetooth-target" data-address="${escapeHtml(device.address)}">
         <span class="bluetooth-device">
           <strong>${escapeHtml(device.name || "UNIDENTIFIED BLE ENTITY")}</strong>
           <em>${escapeHtml(device.address)} · ${Number(device.age_seconds).toFixed(1)}s ago</em>
         </span>
-        <span class="bluetooth-trend ${escapeHtml(device.trend)}">${escapeHtml(device.trend).toUpperCase()}</span>
+        <span class="bluetooth-trend">${escapeHtml(fieldLabel.replace("FIELD ", ""))}</span>
         <span class="bluetooth-rssi"><strong>${Math.round(device.rssi)} dBm</strong><em>AVG ${Number(device.smoothed_rssi).toFixed(1)}</em></span>
       </button>
-    `).join("")
+    `;
+    }).join("")
     : `<div class="wifi-empty">${bluetooth?.running ? "LISTENING FOR BLE ADVERTISEMENTS..." : "SCANNER STANDBY"}</div>`;
   const error = uiState.bluetoothError || bluetooth?.error;
+  const switching = uiState.bluetoothControlRequest !== null;
 
   screen.innerHTML = `
     <div class="bluetooth-layout">
@@ -580,21 +647,29 @@ function bluetoothScreen() {
         </div>
         <div class="finder-reading">
           <strong>${target ? `${Number(target.smoothed_rssi).toFixed(1)} dBm` : "-- dBm"}</strong>
-          <span>${target ? escapeHtml(target.trend).toUpperCase() : "RSSI TREND ONLY"}</span>
+          <span>${target ? escapeHtml(bluetoothFieldLabel(target.smoothed_rssi)) : "FIELD NOT ACQUIRED"}</span>
         </div>
-        <p class="finder-disclaimer">RELATIVE SIGNAL TREND — NO DISTANCE OR DIRECTION</p>
-        <button class="action" type="button" data-action="bluetooth-scan">${bluetooth?.running ? "STOP SCANNER" : "START SCANNER"}</button>
-        <button class="action secondary" type="button" data-action="menu">RETURN TO MENU</button>
+        <button class="action" type="button" data-action="bluetooth-scan">${switching ? "CALIBRATING..." : bluetooth?.running ? "STOP FIELD SWEEP" : "START FIELD SWEEP"}</button>
       </aside>
     </div>
   `;
+  const list = screen.querySelector(".bluetooth-list");
+  if (list) list.scrollTop = uiState.bluetoothScrollTop;
   applyControlState();
+}
+
+function renderBluetoothWhenIdle() {
+  if (uiState.activeView !== "bluetooth") return;
+  if (uiState.pointerActive) {
+    uiState.bluetoothRenderPending = true;
+    return;
+  }
+  uiState.bluetoothRenderPending = false;
+  bluetoothScreen();
 }
 
 async function requestBluetooth({ background = false } = {}) {
   if (uiState.bluetoothRequest) return uiState.bluetoothRequest;
-  if (!background && uiState.operation !== "idle") return null;
-  if (!background) setOperation("bluetooth");
 
   const pending = (async () => {
     try {
@@ -605,11 +680,11 @@ async function requestBluetooth({ background = false } = {}) {
       if (uiState.bluetoothTarget && uiState.bluetooth?.devices?.some((device) => device.address === uiState.bluetoothTarget)) {
         triggerBeeper("scan_tick");
       }
-      if (uiState.activeView === "bluetooth") bluetoothScreen();
+      renderBluetoothWhenIdle();
       return payload;
     } catch (error) {
       uiState.bluetoothError = error instanceof Error ? error.message : "Bluetooth request failed";
-      if (uiState.activeView === "bluetooth") bluetoothScreen();
+      renderBluetoothWhenIdle();
       return null;
     }
   })();
@@ -618,15 +693,14 @@ async function requestBluetooth({ background = false } = {}) {
     return await pending;
   } finally {
     if (uiState.bluetoothRequest === pending) uiState.bluetoothRequest = null;
-    if (!background) setOperation("idle");
+    applyControlState();
   }
 }
 
 async function setBluetoothScanning(enabled) {
-  if (uiState.operation !== "idle") return;
-  setOperation("bluetooth");
+  if (uiState.bluetoothControlRequest) return uiState.bluetoothControlRequest;
   uiState.bluetoothError = null;
-  try {
+  const pending = (async () => {
     const response = await fetch("/api/bluetooth/scan", {
       method: "POST",
       cache: "no-store",
@@ -636,16 +710,22 @@ async function setBluetoothScanning(enabled) {
     const payload = await response.json();
     uiState.bluetooth = payload.bluetooth ?? uiState.bluetooth;
     if (!response.ok) uiState.bluetoothError = payload.error ?? `Bluetooth change failed (${response.status})`;
+    return payload;
+  })();
+  uiState.bluetoothControlRequest = pending;
+  if (uiState.activeView === "bluetooth") bluetoothScreen();
+  try {
+    return await pending;
   } catch (error) {
     uiState.bluetoothError = error instanceof Error ? error.message : "Bluetooth change failed";
+    return null;
   } finally {
-    setOperation("idle");
-    bluetoothScreen();
+    if (uiState.bluetoothControlRequest === pending) uiState.bluetoothControlRequest = null;
+    renderBluetoothWhenIdle();
   }
 }
 
 function openBluetoothScreen() {
-  if (uiState.operation !== "idle") return;
   bluetoothScreen();
   requestBluetooth();
 }
@@ -677,7 +757,6 @@ function beeperScreen() {
         <div class="readout"><span>OUTPUT</span><strong>${beeper?.muted ? "MUTED" : "ACTIVE"}</strong></div>
         <div class="readout"><span>QUEUED PATTERNS</span><strong>${beeper?.queued_patterns ?? 0}</strong></div>
         <button class="action" type="button" data-action="beeper-mute">${beeper?.muted ? "UNMUTE" : "MUTE"}</button>
-        <button class="action secondary" type="button" data-action="menu">RETURN TO MENU</button>
       </aside>
     </div>
   `;
@@ -735,12 +814,11 @@ async function setBeeperMuted(muted) {
     uiState.beeperError = error instanceof Error ? error.message : "Beeper mute change failed";
   } finally {
     setOperation("idle");
-    beeperScreen();
+    if (uiState.activeView === "beeper") beeperScreen();
   }
 }
 
 function openBeeperScreen() {
-  if (uiState.operation !== "idle") return;
   beeperScreen();
   requestBeeper();
 }
@@ -929,6 +1007,7 @@ async function requestScan(full = false, { forceRender = false } = {}) {
   }
 
   const requestId = ++uiState.scanRequestId;
+  const requestedFromView = uiState.activeView;
   uiState.scanFullAnalysis = full;
   setOperation(full ? "analysis" : "scan");
 
@@ -943,7 +1022,8 @@ async function requestScan(full = false, { forceRender = false } = {}) {
     if (requestId !== uiState.scanRequestId) return payload;
 
     uiState.latestPayload = payload;
-    if (forceRender || shouldRenderBackgroundScan()) render();
+    updateFooter();
+    if ((forceRender && uiState.activeView === requestedFromView) || shouldRenderBackgroundScan()) render();
     return payload;
   })();
   uiState.scanPromise = pending;
@@ -997,7 +1077,14 @@ function wakeFromScreensaver() {
   uiState.screensaverActive = false;
   app.classList.remove("screensaver-mode");
   bootScreen();
-  setTimeout(() => requestScan(false, { forceRender: true }).catch(errorScreen), BOOT_DELAY_MS);
+  setTimeout(showHomeAndRefresh, BOOT_DELAY_MS);
+}
+
+function showHomeAndRefresh() {
+  menuScreen();
+  requestScan(false).catch(() => {
+    // HOME remains usable even when the background Ethernet status refresh fails.
+  });
 }
 
 function registerActivity() {
@@ -1047,19 +1134,31 @@ screen.addEventListener("click", (event) => {
 
 menuButton.addEventListener("click", menuScreen);
 
-["pointerdown", "keydown"].forEach((eventName) => {
-  window.addEventListener(eventName, registerActivity, { passive: true });
+window.addEventListener("pointerdown", () => {
+  uiState.pointerActive = true;
+  registerActivity();
+}, { passive: true });
+window.addEventListener("keydown", registerActivity, { passive: true });
+["pointerup", "pointercancel"].forEach((eventName) => {
+  window.addEventListener(eventName, () => {
+    uiState.pointerActive = false;
+    if (uiState.bluetoothRenderPending) {
+      setTimeout(renderBluetoothWhenIdle, 0);
+    }
+  }, { passive: true });
 });
 
 setClock();
 setInterval(setClock, 1000);
 bootScreen();
 resetScreensaverTimer();
-setTimeout(() => requestScan(false, { forceRender: true }).catch(errorScreen), BOOT_DELAY_MS);
+setTimeout(showHomeAndRefresh, BOOT_DELAY_MS);
 setTimeout(() => requestBeeper({ background: true }), 250);
 setInterval(() => {
-  if (!uiState.scanPromise && !["result", "menu", "info"].includes(uiState.activeView) && !uiState.screensaverActive) {
-    requestScan(false).catch(errorScreen);
+  if (!uiState.scanPromise && uiState.activeView === "menu" && !uiState.screensaverActive) {
+    requestScan(false).catch(() => {
+      // A background status refresh must not replace or block HOME.
+    });
   }
 }, 30000);
 setInterval(fetchEcho, ECHO_REFRESH_MS);
@@ -1067,4 +1166,4 @@ setInterval(() => {
   if (uiState.activeView === "bluetooth" && uiState.bluetooth?.running) {
     requestBluetooth({ background: true });
   }
-}, 750);
+}, BLUETOOTH_REFRESH_MS);
