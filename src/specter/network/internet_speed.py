@@ -11,7 +11,7 @@ from threading import Event, Lock, Thread
 from time import monotonic, sleep
 from typing import Any
 
-from specter.network.interface import choose_interface
+from specter.network.interface import choose_internet_interface
 
 
 @dataclass(frozen=True)
@@ -244,7 +244,7 @@ def run_librespeed(
     cancel_event = cancel_event or Event()
     progress = progress or (lambda _phase: None)
     progress("server_selection")
-    interface = choose_interface(options.interface)
+    interface = choose_internet_interface(options.interface)
     if interface is None:
         return _failure(None, "no_interface", "No network interface found")
 

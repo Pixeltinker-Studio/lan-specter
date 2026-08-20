@@ -28,6 +28,13 @@ const uiState = {
   wifiConfirmOff: false,
   wifiRequest: null,
   wifiControlRequest: null,
+  wifiConnection: null,
+  wifiConnectionError: null,
+  wifiConnectionRequest: null,
+  wifiSelection: null,
+  wifiPassword: "",
+  wifiPasswordVisible: false,
+  wifiKeyboardMode: "lower",
   wifiScrollTop: 0,
   bluetooth: null,
   bluetoothError: null,
@@ -49,6 +56,7 @@ let analysisProgressTimer = null;
 let screensaverTimer = null;
 let bluetoothBeeperTimer = null;
 let internetSpeedPollTimer = null;
+let wifiConnectionPollTimer = null;
 let screensaverAnimationFrame = null;
 let echoSamples = [];
 
@@ -161,12 +169,16 @@ function applyControlState() {
     const action = button.dataset.action;
     const requiresWifi = button.dataset.requiresWifi === "true";
     const requiresBeeper = button.dataset.requiresBeeper === "true";
+    const unavailable = button.dataset.unavailable === "true";
+    const wifiConnecting = uiState.wifiConnection?.request?.status === "running";
     const busy = (["analysis", "entity", "refresh"].includes(action) && uiState.scanPromise !== null)
       || (["wifi-rescan", "wifi-toggle"].includes(action) && (uiState.wifiRequest !== null || uiState.wifiControlRequest !== null))
+      || (["wifi-connect-start", "wifi-key", "wifi-password-toggle", "wifi-password-clear"].includes(action)
+        && (uiState.wifiConnectionRequest !== null || wifiConnecting))
       || (action === "bluetooth-scan" && uiState.bluetoothControlRequest !== null)
       || (["internet-speed-start", "internet-speed-cancel"].includes(action) && uiState.internetSpeedRequest !== null)
       || (action === "beeper-mute" && uiState.operation === "beeper");
-    button.disabled = busy
+    button.disabled = unavailable || busy
       || (requiresWifi && uiState.wifi?.radio_enabled !== true)
       || (requiresBeeper && uiState.beeper?.available !== true);
     button.setAttribute("aria-busy", busy ? "true" : "false");
@@ -187,6 +199,7 @@ function updateFooter() {
     uiState.activeView === "menu" ? "MENU" :
     uiState.activeView === "diagnostics" ? "REGISTER" :
     uiState.activeView === "wifi" ? "WLAN" :
+    uiState.activeView === "wifi-connect" ? "WLAN ACCESS" :
     uiState.activeView === "bluetooth" ? "BT FINDER" :
     uiState.activeView === "internet-speed" ? "EXTERNAL" :
     uiState.activeView === "beeper" ? "ACOUSTIC" :
@@ -559,18 +572,28 @@ function wifiScreen() {
       const signalText = signal === null || signal === undefined ? "--" : `${signal}%`;
       const fieldLabel = wifiFieldLabel(signal);
       const identity = accessPoint.ssid || "<HIDDEN SSID>";
+      const unavailable = !accessPoint.ssid;
       return `
-        <div class="wifi-row ${accessPoint.in_use ? "connected" : ""}">
+        <button
+          class="wifi-row ${accessPoint.in_use ? "connected" : ""}"
+          type="button"
+          data-action="wifi-select"
+          data-ssid="${escapeHtml(accessPoint.ssid ?? "")}"
+          data-bssid="${escapeHtml(accessPoint.bssid)}"
+          data-security="${escapeHtml(accessPoint.security ?? "OPEN")}"
+          data-connected="${accessPoint.in_use ? "true" : "false"}"
+          data-unavailable="${unavailable ? "true" : "false"}"
+        >
           <div class="wifi-identity">
             <strong>${escapeHtml(identity)}</strong>
             <span>${escapeHtml(accessPoint.bssid)} · ${escapeHtml(accessPoint.band ?? "unknown band")} · CH ${escapeHtml(accessPoint.channel ?? "--")}</span>
           </div>
-          <div class="wifi-security">${escapeHtml(accessPoint.security || "OPEN")}</div>
+          <div class="wifi-security">${accessPoint.in_use ? "CONNECTED" : escapeHtml(accessPoint.security || "OPEN")}</div>
           <div class="wifi-signal" aria-label="${escapeHtml(fieldLabel)}, signal ${escapeHtml(signalText)}">
             <span style="width: ${signal ?? 0}%"></span>
             <strong>${escapeHtml(fieldLabel.replace("FIELD ", ""))} / ${escapeHtml(signalText)}</strong>
           </div>
-        </div>
+        </button>
       `;
     }).join("")
     : `<div class="wifi-empty">${wifi ? "NO ACCESS POINTS MEASURED" : "READING WLAN INSTRUMENT..."}</div>`;
@@ -688,8 +711,219 @@ function toggleWifiRadio() {
 
 function openWifiScreen() {
   uiState.wifiConfirmOff = false;
+  uiState.wifiSelection = null;
+  uiState.wifiPassword = "";
   wifiScreen();
   requestWifi();
+}
+
+const WIFI_KEYBOARD_LAYOUTS = {
+  lower: [
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+    ["q", "w", "e", "r", "t", "z", "u", "i", "o", "p"],
+    ["a", "s", "d", "f", "g", "h", "j", "k", "l", "BACKSPACE"],
+    ["SHIFT", "y", "x", "c", "v", "b", "n", "m", "SYMBOLS", "SPACE"],
+  ],
+  upper: [
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+    ["Q", "W", "E", "R", "T", "Z", "U", "I", "O", "P"],
+    ["A", "S", "D", "F", "G", "H", "J", "K", "L", "BACKSPACE"],
+    ["SHIFT", "Y", "X", "C", "V", "B", "N", "M", "SYMBOLS", "SPACE"],
+  ],
+  symbols: [
+    ["!", "\"", "#", "$", "%", "&", "'", "(", ")", "*"],
+    ["+", ",", "-", ".", "/", ":", ";", "<", "=", ">"],
+    ["?", "@", "[", "\\", "]", "^", "_", "`", "{", "BACKSPACE"],
+    ["ABC", "|", "}", "~", "0", "1", "2", "3", "4", "SPACE"],
+  ],
+};
+
+function wifiNetworkRequiresPassword(security) {
+  return Boolean(security && !["OPEN", "--"].includes(String(security).trim().toUpperCase()));
+}
+
+function wifiEnterpriseSecurity(security) {
+  const normalized = String(security ?? "").toUpperCase();
+  return normalized.includes("802.1X") || normalized.includes("EAP");
+}
+
+function wifiKeyboard() {
+  return WIFI_KEYBOARD_LAYOUTS[uiState.wifiKeyboardMode].map((row) => `
+    <div class="wifi-keyboard-row">
+      ${row.map((key) => {
+        const label = key === "BACKSPACE" ? "⌫" : key === "SPACE" ? "SPACE" : key;
+        const modifier = ["BACKSPACE", "SHIFT", "SYMBOLS", "ABC", "SPACE"].includes(key) ? " modifier" : "";
+        return `<button class="wifi-key${modifier}" type="button" data-action="wifi-key" data-key="${escapeHtml(key)}">${escapeHtml(label)}</button>`;
+      }).join("")}
+    </div>
+  `).join("");
+}
+
+function selectWifiNetwork(button) {
+  if (button.dataset.connected === "true") return;
+  uiState.wifiSelection = {
+    ssid: button.dataset.ssid,
+    bssid: button.dataset.bssid,
+    security: button.dataset.security || "OPEN",
+  };
+  uiState.wifiPassword = "";
+  uiState.wifiPasswordVisible = false;
+  uiState.wifiKeyboardMode = "lower";
+  uiState.wifiConnectionError = null;
+  uiState.wifiConnection = null;
+  wifiConnectScreen();
+}
+
+function wifiConnectScreen() {
+  setActiveView("wifi-connect");
+  const selection = uiState.wifiSelection;
+  if (!selection) {
+    openWifiScreen();
+    return;
+  }
+  const status = uiState.wifiConnection?.request?.status ?? "idle";
+  const result = uiState.wifiConnection?.result ?? null;
+  const secured = wifiNetworkRequiresPassword(selection.security);
+  const enterprise = wifiEnterpriseSecurity(selection.security);
+  const connecting = status === "running";
+  const connected = status === "completed" && result?.success;
+  const error = uiState.wifiConnectionError || (status === "failed" ? result?.error : null);
+
+  if (connecting || connected) {
+    screen.innerHTML = `
+      <div class="wifi-connect-layout">
+        <section class="panel wifi-connect-status">
+          <p class="typeplate">WLAN ACCESS CONTROL / ${escapeHtml(selection.bssid)}</p>
+          <h1>${connected ? "WLAN FIELD LOCK ACQUIRED" : "WLAN FIELD ACQUISITION"}</h1>
+          ${connecting ? `<div class="activity-line"><span></span>NETWORKMANAGER CONNECTION IN PROGRESS</div>` : ""}
+          <div class="readout"><span>SSID</span><strong>${escapeHtml(selection.ssid)}</strong></div>
+          <div class="readout"><span>SECURITY</span><strong>${escapeHtml(selection.security || "OPEN")}</strong></div>
+          ${connected ? `<div class="condition"><span class="label">CONNECTION</span><strong><span class="status-symbol">●</span>STABLE</strong></div>` : ""}
+          <button class="action" type="button" data-action="wifi-back">BACK TO WLAN SPECTRUM</button>
+        </section>
+      </div>
+    `;
+    applyControlState();
+    return;
+  }
+
+  screen.innerHTML = `
+    <div class="wifi-connect-layout">
+      <section class="panel wifi-connect-panel">
+        <div class="panel-heading wifi-connect-heading">
+          <span class="section-code">WLAN ACCESS CONTROL / ${escapeHtml(selection.security || "OPEN")}</span>
+          <h2 class="screen-title">${escapeHtml(selection.ssid)}</h2>
+        </div>
+        ${error ? `<div class="inline-error wifi-connect-error">${escapeHtml(error)}</div>` : ""}
+        ${enterprise ? `
+          <div class="external-notice">
+            <strong>ENTERPRISE PROFILE REQUIRED</strong>
+            <span>802.1X REQUIRES IDENTITY AND CERTIFICATE PARAMETERS</span>
+          </div>
+        ` : secured ? `
+          <div class="wifi-password-field">
+            <label for="wifi-password">NETWORK KEY / ${uiState.wifiPassword.length} CHAR</label>
+            <input id="wifi-password" type="${uiState.wifiPasswordVisible ? "text" : "password"}" value="${escapeHtml(uiState.wifiPassword)}" readonly tabindex="-1">
+            <button type="button" data-action="wifi-password-toggle">${uiState.wifiPasswordVisible ? "HIDE" : "SHOW"}</button>
+          </div>
+          <div class="wifi-keyboard" aria-label="On-screen network key keyboard">${wifiKeyboard()}</div>
+        ` : `
+          <div class="external-notice wifi-open-notice">
+            <strong>OPEN NETWORK</strong>
+            <span>NO LINK ENCRYPTION DETECTED</span>
+          </div>
+        `}
+        <div class="wifi-connect-actions">
+          <button class="action secondary" type="button" data-action="wifi-back">BACK TO WLAN SPECTRUM</button>
+          ${secured && !enterprise ? `<button class="action secondary" type="button" data-action="wifi-password-clear">CLEAR KEY</button>` : ""}
+          ${!enterprise ? `<button class="action action-primary" type="button" data-action="wifi-connect-start">ACQUIRE WLAN FIELD</button>` : ""}
+        </div>
+      </section>
+    </div>
+  `;
+  applyControlState();
+}
+
+function handleWifiKey(key) {
+  if (key === "BACKSPACE") uiState.wifiPassword = uiState.wifiPassword.slice(0, -1);
+  else if (key === "SPACE") uiState.wifiPassword += " ";
+  else if (key === "SHIFT") uiState.wifiKeyboardMode = uiState.wifiKeyboardMode === "upper" ? "lower" : "upper";
+  else if (key === "SYMBOLS") uiState.wifiKeyboardMode = "symbols";
+  else if (key === "ABC") uiState.wifiKeyboardMode = "lower";
+  else if (uiState.wifiPassword.length < 64) uiState.wifiPassword += key;
+  wifiConnectScreen();
+}
+
+function scheduleWifiConnectionPoll() {
+  clearTimeout(wifiConnectionPollTimer);
+  if (uiState.wifiConnection?.request?.status === "running") {
+    wifiConnectionPollTimer = setTimeout(() => requestWifiConnectionStatus({ background: true }), 500);
+  }
+}
+
+async function requestWifiConnectionStatus({ background = false } = {}) {
+  if (uiState.wifiConnectionRequest) return uiState.wifiConnectionRequest;
+  const previousStatus = uiState.wifiConnection?.request?.status;
+  const pending = (async () => {
+    try {
+      const response = await fetch("/api/wifi/connection", { cache: "no-store", headers: { Accept: "application/json" } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error ?? `Wi-Fi connection status failed (${response.status})`);
+      uiState.wifiConnection = payload;
+      const currentStatus = payload?.request?.status;
+      if (previousStatus === "running" && currentStatus === "completed") {
+        triggerBeeper("acquired");
+        requestWifi();
+      } else if (previousStatus === "running" && currentStatus === "failed") {
+        triggerBeeper("error");
+      }
+    } catch (error) {
+      uiState.wifiConnectionError = error instanceof Error ? error.message : "Wi-Fi connection status failed";
+    } finally {
+      if ((!background || uiState.activeView === "wifi-connect") && uiState.wifiSelection) wifiConnectScreen();
+    }
+    return uiState.wifiConnection;
+  })();
+  uiState.wifiConnectionRequest = pending;
+  try {
+    return await pending;
+  } finally {
+    if (uiState.wifiConnectionRequest === pending) uiState.wifiConnectionRequest = null;
+    scheduleWifiConnectionPoll();
+  }
+}
+
+async function startWifiConnection() {
+  if (!uiState.wifiSelection || uiState.wifiConnectionRequest) return;
+  uiState.wifiConnectionError = null;
+  const selection = uiState.wifiSelection;
+  const pending = (async () => {
+    try {
+      const response = await fetch("/api/wifi/connect", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ ...selection, password: uiState.wifiPassword || null }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error ?? `Wi-Fi connection failed (${response.status})`);
+      uiState.wifiConnection = payload;
+      uiState.wifiPassword = "";
+    } catch (error) {
+      uiState.wifiConnectionError = error instanceof Error ? error.message : "Wi-Fi connection failed";
+    } finally {
+      if (uiState.activeView === "wifi-connect") wifiConnectScreen();
+    }
+  })();
+  uiState.wifiConnectionRequest = pending;
+  applyControlState();
+  try {
+    await pending;
+  } finally {
+    if (uiState.wifiConnectionRequest === pending) uiState.wifiConnectionRequest = null;
+    applyControlState();
+    scheduleWifiConnectionPoll();
+  }
 }
 
 function bluetoothScreen() {
@@ -1742,6 +1976,20 @@ screen.addEventListener("click", (event) => {
     requestWifi({ rescan: true });
   } else if (button.dataset.action === "wifi-toggle") {
     toggleWifiRadio();
+  } else if (button.dataset.action === "wifi-select") {
+    selectWifiNetwork(button);
+  } else if (button.dataset.action === "wifi-key") {
+    handleWifiKey(button.dataset.key ?? "");
+  } else if (button.dataset.action === "wifi-password-toggle") {
+    uiState.wifiPasswordVisible = !uiState.wifiPasswordVisible;
+    wifiConnectScreen();
+  } else if (button.dataset.action === "wifi-password-clear") {
+    uiState.wifiPassword = "";
+    wifiConnectScreen();
+  } else if (button.dataset.action === "wifi-connect-start") {
+    startWifiConnection();
+  } else if (button.dataset.action === "wifi-back") {
+    openWifiScreen();
   } else if (button.dataset.action === "bluetooth") {
     openBluetoothScreen();
   } else if (button.dataset.action === "bluetooth-scan") {

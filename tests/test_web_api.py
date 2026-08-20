@@ -68,6 +68,49 @@ class WebApiTests(unittest.TestCase):
         self.assertFalse(result["wifi"]["radio_enabled"])
         self.assertEqual(result["wifi"]["access_points"], [])
 
+    def test_wifi_connect_route_activates_selected_network_without_echoing_password(self):
+        status, started = self.request(
+            "/api/wifi/connect",
+            method="POST",
+            payload={
+                "ssid": "FIELD-NET",
+                "bssid": "02:00:00:00:00:02",
+                "security": "WPA2",
+                "password": "field-secret",
+            },
+        )
+
+        self.assertEqual(status, 202)
+        self.assertEqual(started["request"]["status"], "running")
+        self.assertNotIn("field-secret", str(started))
+
+        result = started
+        for _ in range(30):
+            status, result = self.request("/api/wifi/connection")
+            if result["request"]["status"] != "running":
+                break
+            sleep(0.05)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["request"]["status"], "completed")
+        self.assertTrue(result["result"]["success"])
+        self.assertEqual(self.demo_state.wifi_connection, "FIELD-NET")
+
+    def test_wifi_connect_route_rejects_missing_network_key(self):
+        status, result = self.request(
+            "/api/wifi/connect",
+            method="POST",
+            payload={
+                "ssid": "FIELD-NET",
+                "bssid": "02:00:00:00:00:02",
+                "security": "WPA2",
+                "password": "",
+            },
+        )
+
+        self.assertEqual(status, 400)
+        self.assertIn("requires a password", result["error"])
+
     def test_bluetooth_scanner_route_starts_demo_receiver(self):
         status, result = self.request("/api/bluetooth/scan", method="POST", payload={"enabled": True})
 

@@ -1,8 +1,20 @@
 import unittest
+from threading import Event
 from unittest.mock import patch
 
 from specter.core.results import CommandResult
-from specter.network.wifi import parse_access_points, parse_wifi_devices, read_wifi_status, set_wifi_radio, split_escaped_fields
+from specter.network.wifi import (
+    WifiConnectRequest,
+    WifiConnectResult,
+    WifiConnectionService,
+    connect_wifi,
+    parse_access_points,
+    parse_wifi_devices,
+    read_wifi_status,
+    set_wifi_radio,
+    split_escaped_fields,
+    validate_wifi_connect_request,
+)
 
 
 class WifiParserTests(unittest.TestCase):
@@ -89,6 +101,78 @@ class WifiParserTests(unittest.TestCase):
         hidden = next(access_point for access_point in access_points if access_point.bssid.endswith(":03"))
         self.assertIsNone(hidden.ssid)
         self.assertEqual(hidden.signal_percent, 100)
+
+    @patch("specter.network.wifi.run_command")
+    def test_connect_wifi_uses_selected_adapter_and_access_point(self, run_command_mock):
+        run_command_mock.return_value = CommandResult(command=("nmcli",), returncode=0, stdout="", stderr="")
+        request = WifiConnectRequest(
+            ssid="FIELD-NET",
+            bssid="02:00:00:00:00:02",
+            security="WPA2",
+            password="field-secret",
+            interface="wlan0",
+        )
+
+        result = connect_wifi(request)
+
+        self.assertTrue(result.success)
+        command = run_command_mock.call_args.args[0]
+        self.assertEqual(command[command.index("ifname") + 1], "wlan0")
+        self.assertEqual(command[command.index("bssid") + 1], "02:00:00:00:00:02")
+        self.assertEqual(command[command.index("password") + 1], "field-secret")
+
+    @patch("specter.network.wifi.run_command")
+    def test_connect_open_wifi_does_not_add_password_argument(self, run_command_mock):
+        run_command_mock.return_value = CommandResult(command=("nmcli",), returncode=0, stdout="", stderr="")
+
+        result = connect_wifi(
+            WifiConnectRequest(
+                ssid="FIELD-GUEST",
+                bssid="02:00:00:00:00:03",
+                security="OPEN",
+                interface="wlan0",
+            )
+        )
+
+        self.assertTrue(result.success)
+        self.assertNotIn("password", run_command_mock.call_args.args[0])
+
+    def test_enterprise_wifi_requires_a_preconfigured_profile(self):
+        error = validate_wifi_connect_request(
+            WifiConnectRequest(
+                ssid="FIELD-CORP",
+                bssid="02:00:00:00:00:04",
+                security="WPA2 802.1X",
+                password="secret",
+            )
+        )
+
+        self.assertIn("802.1X", error)
+
+    def test_connection_service_never_exposes_password(self):
+        entered = Event()
+        release = Event()
+
+        def runner(request):
+            entered.set()
+            release.wait(timeout=2)
+            return WifiConnectResult(True, request.interface, request.ssid)
+
+        service = WifiConnectionService(runner=runner)
+        service.start(
+            WifiConnectRequest(
+                ssid="FIELD-NET",
+                bssid="02:00:00:00:00:02",
+                security="WPA2",
+                password="field-secret",
+                interface="wlan0",
+            )
+        )
+        self.assertTrue(entered.wait(timeout=1))
+
+        self.assertNotIn("field-secret", str(service.snapshot()))
+        release.set()
+        service.stop()
 
 
 if __name__ == "__main__":

@@ -28,7 +28,14 @@ from specter.network.internet_speed import (
     InternetSpeedService,
     options_from_environment,
 )
-from specter.network.wifi import read_wifi_status, set_wifi_radio
+from specter.network.wifi import (
+    WifiConnectRequest,
+    WifiConnectResult,
+    WifiConnectionService,
+    read_wifi_status,
+    set_wifi_radio,
+    validate_wifi_connect_request,
+)
 
 
 STATIC_PACKAGE = "specter.ui.web_static"
@@ -55,6 +62,7 @@ class DemoState:
     started_at: float = field(default_factory=monotonic)
     analysis_runs: int = 0
     wifi_enabled: bool = True
+    wifi_connection: str | None = "SPECTER LAB"
     bluetooth_scanning: bool = False
     beeper_muted: bool = False
 
@@ -136,8 +144,8 @@ class DemoState:
                 "interface": "wlan0",
                 "adapter_available": True,
                 "radio_enabled": self.wifi_enabled,
-                "device_state": "connected" if self.wifi_enabled else "unavailable",
-                "connection": "SPECTER LAB" if self.wifi_enabled else None,
+                "device_state": "connected" if self.wifi_enabled and self.wifi_connection else "disconnected" if self.wifi_enabled else "unavailable",
+                "connection": self.wifi_connection if self.wifi_enabled else None,
                 "scanned_at": _utc_now() if self.wifi_enabled else None,
                 "error": None,
                 "access_points": (
@@ -150,7 +158,7 @@ class DemoState:
                             "frequency_mhz": 5180,
                             "signal_percent": signal,
                             "security": "WPA2 WPA3",
-                            "in_use": True,
+                            "in_use": self.wifi_connection == "SPECTER LAB",
                             "band": "5 GHz",
                         },
                         {
@@ -161,7 +169,7 @@ class DemoState:
                             "frequency_mhz": 2437,
                             "signal_percent": 48,
                             "security": "WPA2",
-                            "in_use": False,
+                            "in_use": self.wifi_connection == "FIELD-NET",
                             "band": "2.4 GHz",
                         },
                     ]
@@ -254,6 +262,12 @@ def _run_demo_internet_speed(
         bytes_received=429_630_000,
         client_ip="192.0.2.10",
     )
+
+
+def _run_demo_wifi_connect(state: DemoState, request: WifiConnectRequest) -> WifiConnectResult:
+    sleep(0.8)
+    state.wifi_connection = request.ssid
+    return WifiConnectResult(True, request.interface or "wlan0", request.ssid)
 
 
 class ScanCoordinator:
@@ -436,6 +450,9 @@ def serve(
         options.internet_speed_options,
         runner=_run_demo_internet_speed if demo else None,
     )
+    wifi_connection_service = WifiConnectionService(
+        runner=(lambda request: _run_demo_wifi_connect(demo_state, request)) if demo else None,
+    )
     if beeper_pin is not None:
         beeper.trigger("boot")
     handler = build_handler(
@@ -445,6 +462,7 @@ def serve(
         bluetooth_scanner=bluetooth_scanner,
         beeper=beeper,
         internet_speed_service=internet_speed_service,
+        wifi_connection_service=wifi_connection_service,
     )
     server = ThreadingHTTPServer((host, port), handler)
     print(f"SPECTER UI listening on http://{host}:{port}")
@@ -459,6 +477,7 @@ def serve(
         bluetooth_scanner.stop()
         beeper.stop()
         internet_speed_service.stop()
+        wifi_connection_service.stop()
         server.server_close()
     return 0
 
@@ -472,6 +491,7 @@ def build_handler(
     bluetooth_scanner: BluetoothScannerService | None = None,
     beeper: BeeperService | None = None,
     internet_speed_service: InternetSpeedService | None = None,
+    wifi_connection_service: WifiConnectionService | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     coordinator = scan_coordinator or ScanCoordinator(
         lambda full_analysis: build_scan_payload(
@@ -487,6 +507,9 @@ def build_handler(
     speed_service = internet_speed_service or InternetSpeedService(
         options.internet_speed_options,
         runner=_run_demo_internet_speed if demo else None,
+    )
+    wifi_service = wifi_connection_service or WifiConnectionService(
+        runner=(lambda request: _run_demo_wifi_connect(demo_state, request)) if demo else None,
     )
 
     class SpecterRequestHandler(BaseHTTPRequestHandler):
@@ -508,6 +531,9 @@ def build_handler(
                     with wifi_lock:
                         status = read_wifi_status(interface=options.wifi_interface, rescan=False)
                     self._send_json({"wifi": to_jsonable(status)})
+                return
+            if parsed.path == "/api/wifi/connection":
+                self._send_json(wifi_service.snapshot())
                 return
             if parsed.path == "/api/bluetooth":
                 payload = demo_state.bluetooth_payload() if demo else {"bluetooth": to_jsonable(ble_scanner.snapshot())}
@@ -565,6 +591,41 @@ def build_handler(
                         {"wifi": to_jsonable(status), "error": change_error},
                         status=response_status,
                     )
+                return
+            if parsed.path == "/api/wifi/connect":
+                request = self._read_json()
+                if request is None:
+                    self._send_json({"error": "Expected Wi-Fi connection parameters"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                ssid = request.get("ssid")
+                bssid = request.get("bssid")
+                security = request.get("security")
+                password = request.get("password")
+                if not isinstance(ssid, str) or not isinstance(bssid, str):
+                    self._send_json({"error": "Wi-Fi SSID and BSSID are required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                if security is not None and not isinstance(security, str):
+                    self._send_json({"error": "Wi-Fi security must be a string"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                if password is not None and not isinstance(password, str):
+                    self._send_json({"error": "Wi-Fi password must be a string"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                connection_request = WifiConnectRequest(
+                    ssid=ssid,
+                    bssid=bssid,
+                    security=security,
+                    password=password,
+                    interface=options.wifi_interface,
+                )
+                validation_error = validate_wifi_connect_request(connection_request)
+                if validation_error is not None:
+                    self._send_json({"error": validation_error}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                started = wifi_service.start(connection_request)
+                self._send_json(
+                    wifi_service.snapshot(),
+                    status=HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT,
+                )
                 return
             if parsed.path == "/api/bluetooth/scan":
                 request = self._read_json()

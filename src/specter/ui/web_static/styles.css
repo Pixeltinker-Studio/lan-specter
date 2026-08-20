@@ -768,6 +768,7 @@ button[aria-busy="true"] {
 }
 
 .wifi-row {
+  width: 100%;
   display: grid;
   grid-template-columns: minmax(250px, 1fr) 120px 150px;
   align-items: center;
@@ -776,6 +777,8 @@ button[aria-busy="true"] {
   padding: 8px 10px;
   border: 1px solid var(--line-soft);
   background: rgba(3, 5, 5, 0.34);
+  color: var(--text);
+  text-align: left;
 }
 
 .wifi-row.connected {
@@ -848,6 +851,154 @@ button[aria-busy="true"] {
 .wifi-controls .action {
   min-height: 58px;
   font-size: 17px;
+}
+
+.wifi-connect-layout {
+  height: 100%;
+}
+
+.wifi-connect-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.wifi-connect-heading {
+  margin-bottom: 0;
+}
+
+.wifi-connect-heading .screen-title {
+  margin-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wifi-connect-error {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.wifi-password-field {
+  height: 58px;
+  min-height: 58px;
+  flex: 0 0 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  grid-template-rows: 18px 38px;
+  border: 1px solid var(--line);
+  background: var(--black);
+}
+
+.wifi-password-field label {
+  grid-column: 1;
+  grid-row: 1;
+  padding: 4px 10px 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.wifi-password-field input {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  border: 0;
+  padding: 3px 10px 8px;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+
+.wifi-password-field button {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  height: 56px;
+  min-height: 56px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: rgba(135, 199, 197, 0.08);
+  color: var(--cyan);
+  font-size: 13px;
+}
+
+.wifi-keyboard {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(56px, 1fr));
+  gap: 5px;
+}
+
+.wifi-keyboard-row {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.wifi-key {
+  min-width: 0;
+  min-height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: rgba(3, 5, 5, 0.58);
+  color: var(--text);
+  font-size: 17px;
+  text-align: center;
+}
+
+.wifi-key.modifier {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  font-size: 11px;
+}
+
+.wifi-key:active,
+.wifi-password-field button:active {
+  border-color: var(--green);
+  background: rgba(156, 213, 139, 0.16);
+  color: var(--green);
+}
+
+.wifi-connect-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.wifi-connect-actions .action {
+  min-height: 56px;
+  padding-inline: 10px;
+  font-size: 14px;
+}
+
+.wifi-open-notice {
+  align-self: start;
+}
+
+.wifi-connect-status {
+  width: min(720px, 100%);
+  min-height: 100%;
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  margin: 0 auto;
+}
+
+.wifi-connect-status h1 {
+  margin: 0;
+  color: var(--green);
+  font-size: 34px;
+}
+
+.wifi-connect-status .action {
+  min-height: 56px;
 }
 
 .wifi-empty,
@@ -1665,6 +1816,10 @@ button[aria-busy="true"] {
     min-height: 56px;
   }
 
+  .wifi-controls .action {
+    min-height: 56px;
+  }
+
   .internet-result-grid {
     gap: 10px;
   }
@@ -1694,6 +1849,10 @@ button[aria-busy="true"] {
   .wifi-row,
   .bluetooth-row {
     min-height: 54px;
+  }
+
+  .wifi-row {
+    min-height: 56px;
   }
 
   .finder-name {

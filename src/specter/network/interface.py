@@ -10,21 +10,29 @@ SYS_CLASS_NET = Path("/sys/class/net")
 
 
 def get_default_interface() -> str | None:
+    interfaces = get_default_interfaces()
+    return interfaces[0] if interfaces else None
+
+
+def get_default_interfaces() -> tuple[str, ...]:
     try:
         result = run_command(("ip", "route", "show", "default"), timeout_seconds=3)
     except CommandNotFoundError:
-        return None
+        return ()
 
     if result.returncode != 0:
-        return None
+        return ()
 
+    interfaces: list[str] = []
     for line in result.stdout.splitlines():
         parts = line.split()
         if "dev" in parts:
             index = parts.index("dev")
             if index + 1 < len(parts):
-                return parts[index + 1]
-    return None
+                interface = parts[index + 1]
+                if interface not in interfaces:
+                    interfaces.append(interface)
+    return tuple(interfaces)
 
 
 def list_candidate_interfaces(sys_class_net: Path = SYS_CLASS_NET) -> tuple[str, ...]:
@@ -55,6 +63,23 @@ def choose_interface(preferred: str | None = None) -> str | None:
     if candidates:
         return candidates[0]
     return None
+
+
+def choose_internet_interface(preferred: str | None = None) -> str | None:
+    """Prefer an Internet-routed wired interface, then routed Wi-Fi."""
+    if preferred:
+        return preferred
+
+    default_interfaces = get_default_interfaces()
+    wired = next((name for name in default_interfaces if name.startswith(("eth", "en"))), None)
+    if wired is not None:
+        return wired
+    wifi = next((name for name in default_interfaces if name.startswith(("wlan", "wl"))), None)
+    if wifi is not None:
+        return wifi
+    if default_interfaces:
+        return default_interfaces[0]
+    return choose_interface()
 
 
 def get_gateway(interface: str | None = None) -> str | None:

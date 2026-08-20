@@ -130,7 +130,7 @@ class InternetSpeedTests(unittest.TestCase):
         self.assertFalse(snapshot["result"]["success"])
         self.assertEqual(snapshot["result"]["error_code"], "cancelled")
 
-    @patch("specter.network.internet_speed.choose_interface", return_value="eth0")
+    @patch("specter.network.internet_speed.choose_internet_interface", return_value="eth0")
     def test_missing_client_never_returns_a_success_result(self, _choose_interface):
         def missing_process(*args, **kwargs):
             raise FileNotFoundError
@@ -141,7 +141,7 @@ class InternetSpeedTests(unittest.TestCase):
         self.assertEqual(result.interface, "eth0")
         self.assertEqual(result.error_code, "client_missing")
 
-    @patch("specter.network.internet_speed.choose_interface", return_value="eth0")
+    @patch("specter.network.internet_speed.choose_internet_interface", return_value="eth0")
     def test_streamed_debug_output_updates_real_measurement_phases(self, _choose_interface):
         payload = (FIXTURES / "librespeed_v1_0_14_success.json").read_text(encoding="utf-8")
 

@@ -29,6 +29,7 @@ Features, bugs, and technical tasks are tracked in the [LAN Specter project](htt
 - Ping gateway, a remote SPECTER entity, and optionally an internet target
 - Run an `iperf3` client test against a remote RE-01
 - Run an operator-initiated Internet speed test with `librespeed-cli`
+- Select and activate WPA/WPA2/WPA3-Personal or open Wi-Fi networks from the touch UI
 - Return structured diagnostic results before formatting them for the CLI
 
 ## Raspberry Pi Setup
@@ -224,7 +225,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now specter-es01-web.service
 ```
 
-The Polkit rule grants the `specter` service user only the NetworkManager permissions needed to scan for Wi-Fi access points and switch the Wi-Fi radio. It does not grant general root command execution.
+The Polkit rule grants the `specter` service user the NetworkManager permissions needed to scan for Wi-Fi access points, switch the Wi-Fi radio, and activate the operator-selected connection. It does not grant general root command execution. WPA/WPA2/WPA3-Personal keys are entered through the local on-screen keyboard; 802.1X enterprise profiles must be provisioned separately.
+
+The Internet speed test binds to a routed wired interface whenever one is available. If no wired default route exists, it uses the routed Wi-Fi interface. An explicit `SPECTER_LIBRESPEED_INTERFACE` setting still overrides automatic selection.
 
 ### Raspberry Pi OS Lite Kiosk
 
