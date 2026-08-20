@@ -13,6 +13,7 @@
 - Validate all web UI layout changes at 1024 x 600 before considering them complete.
 - Smaller viewport tests may be used as additional compatibility checks, but they must not replace the 1024 x 600 acceptance test.
 - The primary interaction method is capacitive touch, so controls and scroll areas must remain touch-friendly.
+- Refresh affected reference captures with `python scripts/capture_ui_screenshots.py --screens <names>` after material UI changes. The generator enforces the native viewport and is documented in `docs/screenshots/README.md`.
 
 ## SPECTER UI
 

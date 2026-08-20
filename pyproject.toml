@@ -15,6 +15,11 @@ dependencies = [
     "gpiozero>=2.0,<3",
 ]
 
+[project.optional-dependencies]
+screenshots = [
+    "playwright>=1.40,<2",
+]
+
 [project.scripts]
 specter = "specter.ui.cli:main"
 specter-ui = "specter.ui.web:main"
