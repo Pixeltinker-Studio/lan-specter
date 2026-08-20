@@ -2,6 +2,8 @@ import json
 import unittest
 from http.server import ThreadingHTTPServer
 from threading import Thread
+from time import monotonic
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from specter.ui.web import DemoState, WebUiOptions, build_handler
@@ -9,7 +11,9 @@ from specter.ui.web import DemoState, WebUiOptions, build_handler
 
 class WebApiTests(unittest.TestCase):
     def setUp(self):
-        handler = build_handler(options=WebUiOptions(), demo=True, demo_state=DemoState())
+        self.demo_state = DemoState()
+        self.demo_state.started_at -= 20
+        handler = build_handler(options=WebUiOptions(), demo=True, demo_state=self.demo_state)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.worker = Thread(target=self.server.serve_forever, daemon=True)
         self.worker.start()
@@ -29,18 +33,33 @@ class WebApiTests(unittest.TestCase):
             method=method,
             headers={"Content-Type": "application/json", "Accept": "application/json"},
         )
-        with urlopen(request, timeout=2) as response:
-            return response.status, json.loads(response.read())
+        try:
+            with urlopen(request, timeout=2) as response:
+                return response.status, json.loads(response.read())
+        except HTTPError as error:
+            return error.code, json.loads(error.read())
 
     def test_scan_read_and_start_are_separate(self):
         status, snapshot = self.request("/api/scan")
         self.assertEqual(status, 200)
         self.assertEqual(snapshot["request"]["status"], "idle")
 
+        self.request("/api/scan", method="POST")
         status, result = self.request("/api/scan?full=1", method="POST")
         self.assertEqual(status, 200)
         self.assertEqual(result["request"]["status"], "completed")
         self.assertTrue(result["request"]["full_analysis"])
+
+    def test_full_analysis_is_blocked_without_acquired_remote_entity(self):
+        self.demo_state.started_at = monotonic() - 7
+        self.request("/api/scan", method="POST")
+
+        status, result = self.request("/api/scan?full=1", method="POST")
+
+        self.assertEqual(status, 409)
+        self.assertEqual(result["request"]["status"], "blocked")
+        self.assertEqual(result["code"], "R-031")
+        self.assertEqual(self.demo_state.analysis_runs, 0)
 
     def test_wifi_radio_route_returns_confirmed_state(self):
         status, result = self.request("/api/wifi/radio", method="POST", payload={"enabled": False})

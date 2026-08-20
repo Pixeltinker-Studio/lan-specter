@@ -561,6 +561,22 @@ def build_handler(
 
             query = parse_qs(parsed.query)
             full_analysis = query.get("full", ["0"])[0] == "1"
+            if full_analysis:
+                current = coordinator.snapshot(mode="demo" if demo else "live")
+                remote_ping = (current.get("scan") or {}).get("remote_ping") or {}
+                if remote_ping.get("reachable") is not True:
+                    self._send_json(
+                        {
+                            "mode": "demo" if demo else "live",
+                            "ui": {"state": "entity_not_found"},
+                            "scan": current.get("scan"),
+                            "request": {"status": "blocked", "full_analysis": True},
+                            "error": "Remote entity must be acquired before full analysis",
+                            "code": "R-031",
+                        },
+                        status=HTTPStatus.CONFLICT,
+                    )
+                    return
             try:
                 payload = coordinator.run(full_analysis=full_analysis)
             except Exception as exc:

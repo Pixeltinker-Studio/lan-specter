@@ -169,6 +169,7 @@ function updateFooter() {
   modeStatus.textContent =
     uiState.activeView === "analysis" ? "ANALYSIS" :
     uiState.activeView === "result" ? "RESULT" :
+    uiState.activeView === "interlock" ? "INTERLOCK" :
     uiState.activeView === "menu" ? "MENU" :
     uiState.activeView === "diagnostics" ? "REGISTER" :
     uiState.activeView === "wifi" ? "WLAN" :
@@ -270,6 +271,27 @@ function faultScreen(title, message, reference, action = "RETRY") {
       </aside>
     </div>
   `;
+}
+
+function analysisInterlockScreen() {
+  setActiveView("interlock");
+  screen.innerHTML = `
+    <div class="fault-layout">
+      <section class="fault-panel">
+        <p class="typeplate">ANALYSIS INTERLOCK</p>
+        <h1>REMOTE ENTITY REQUIRED</h1>
+        <p>FULL ANALYSIS INHIBITED — ACQUIRE RE-01 BEFORE ENERGIZING THE TEST SEQUENCE</p>
+        <div class="error-code">REFERENCE R-031</div>
+      </section>
+      <aside class="panel panel-compact">
+        <p class="label">ACQUISITION CONTROL</p>
+        <div class="actions">
+          <button class="action" type="button" data-action="entity">RUN ENTITY SCAN</button>
+        </div>
+      </aside>
+    </div>
+  `;
+  applyControlState();
 }
 
 function readyScreen() {
@@ -1050,9 +1072,19 @@ async function fetchEcho() {
 
 async function runAnalysis() {
   if (uiState.scanPromise || uiState.screensaverActive) return;
+  if (ping("remote_ping")?.reachable !== true) {
+    triggerBeeper("warning");
+    analysisInterlockScreen();
+    return;
+  }
   analysisScreen();
   try {
-    await requestScan(true, { forceRender: true });
+    const payload = await requestScan(true, { forceRender: true });
+    if (payload?.ui?.state === "entity_not_found") {
+      triggerBeeper("warning");
+      analysisInterlockScreen();
+      return;
+    }
     triggerBeeper("acquired");
   } catch {
     triggerBeeper("error");
