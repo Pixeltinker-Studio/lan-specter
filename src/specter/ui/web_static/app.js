@@ -1631,11 +1631,10 @@ function startScreensaverAnimation() {
   let captureFrameAngles = [];
   let captureTargetAngle = 0;
   let frameSizes = frames.map(() => 46);
-  let wanderHeading = Math.random() * Math.PI * 2;
-  let wanderHeadingTarget = wanderHeading;
-  let wanderSpeed = 34;
-  let wanderSpeedTarget = 34;
   let wanderRepickUntil = 0;
+  let wanderWaypointX = 512;
+  let wanderWaypointY = 300;
+  let swayPhase = Math.random() * Math.PI * 2;
 
   const entityIds = ["07", "12", "19", "31", "42", "58", "73"];
   const waypoints = [
@@ -1720,20 +1719,24 @@ function startScreensaverAnimation() {
     let desiredChaserVy;
     let chaserBlend;
     if (phase === "wander") {
-      if (now >= wanderRepickUntil) {
-        wanderRepickUntil = now + 1500 + Math.random() * 2500;
-        wanderHeadingTarget = Math.random() * Math.PI * 2;
-        wanderSpeedTarget = 22 + Math.random() * 34;
+      const toWaypointX = wanderWaypointX - chaserState.x;
+      const toWaypointY = wanderWaypointY - chaserState.y;
+      const distanceToWaypoint = length(toWaypointX, toWaypointY);
+      if (distanceToWaypoint < 96 || now >= wanderRepickUntil) {
+        wanderRepickUntil = now + 6000 + Math.random() * 5000;
+        wanderWaypointX = 130 + Math.random() * (1024 - 260);
+        wanderWaypointY = 120 + Math.random() * (600 - 240);
       }
-      const headingDiff = Math.atan2(
-        Math.sin(wanderHeadingTarget - wanderHeading),
-        Math.cos(wanderHeadingTarget - wanderHeading),
-      );
-      wanderHeading += headingDiff * Math.min(1, deltaSeconds * 1.1);
-      wanderSpeed += (wanderSpeedTarget - wanderSpeed) * Math.min(1, deltaSeconds * 1.1);
+      const baseHeading = Math.atan2(toWaypointY, toWaypointX);
+      swayPhase += deltaSeconds * 0.35;
+      const swayAmount = Math.sin(seconds * 1.3 + swayPhase * 3.1) * 0.95;
+      const heading = baseHeading + swayAmount;
+      const travelSpeed = 40 + Math.sin(seconds * 0.6 + swayPhase * 1.7) * 10;
+      const baseVx = Math.cos(heading) * travelSpeed;
+      const baseVy = Math.sin(heading) * travelSpeed;
 
-      const edgeMargin = 150;
-      const edgePush = 46;
+      const edgeMargin = 130;
+      const edgePush = 34;
       let edgeVx = 0;
       let edgeVy = 0;
       if (chaserState.x < edgeMargin) edgeVx += (edgeMargin - chaserState.x) / edgeMargin * edgePush;
@@ -1741,9 +1744,9 @@ function startScreensaverAnimation() {
       if (chaserState.y < edgeMargin) edgeVy += (edgeMargin - chaserState.y) / edgeMargin * edgePush;
       if (chaserState.y > 600 - edgeMargin) edgeVy -= (chaserState.y - (600 - edgeMargin)) / edgeMargin * edgePush;
 
-      desiredChaserVx = Math.cos(wanderHeading) * wanderSpeed + edgeVx;
-      desiredChaserVy = Math.sin(wanderHeading) * wanderSpeed + edgeVy;
-      chaserBlend = Math.min(1, 1.4 * deltaSeconds);
+      desiredChaserVx = baseVx + edgeVx;
+      desiredChaserVy = baseVy + edgeVy;
+      chaserBlend = Math.min(1, 1.7 * deltaSeconds);
     } else {
       const predictionSeconds = phase === "pursuit" ? clamp(initialChaseDistance / 420, 0.1, 0.55) : 0;
       const pursuitX = targetState.x + targetState.vx * predictionSeconds;
@@ -1800,7 +1803,8 @@ function startScreensaverAnimation() {
 
     history.unshift({ x: chaserState.x, y: chaserState.y });
     if (history.length > 96) history.pop();
-    const delayStep = 0.38 + (1 - lockAmount) * 3.45;
+    const wanderLengthen = phase === "wander" ? 1.6 : 1;
+    const delayStep = (0.38 + (1 - lockAmount) * 3.45) * wanderLengthen;
     const synchronization = phase === "destroy"
       ? 1
       : phase === "capture"
@@ -1809,26 +1813,33 @@ function startScreensaverAnimation() {
           ? 0
           : lockAmount * 0.28;
     const synchronizedAngle = seconds * 9;
-    const frameGeometry = frames.map((frame, index) => {
+    const trailPoints = frames.map((frame, index) => {
       const trailPoint = sampleHistory(index * delayStep);
-      const point = {
+      return {
         x: trailPoint.x + (targetState.x - trailPoint.x) * synchronization,
         y: trailPoint.y + (targetState.y - trailPoint.y) * synchronization,
       };
+    });
+    const frameGeometry = trailPoints.map((point, index) => {
       const chaseSpeed = length(chaserState.vx, chaserState.vy);
-      const sizeTarget = clamp(44 + chaseSpeed * 0.55, 44, 176);
-      frameSizes[index] += (sizeTarget - frameSizes[index]) * Math.min(1, deltaSeconds * 2.6);
+      const taper = index / Math.max(1, frames.length - 1);
+      const sizeTarget = clamp(44 + chaseSpeed * 0.55 + taper * 60, 40, 210);
+      frameSizes[index] += (sizeTarget - frameSizes[index]) * Math.min(1, deltaSeconds * 2.2);
       const size = frameSizes[index];
-      const spinDirection = index % 3 === 0 ? -1 : 1;
-      const spinRate = 2.2 + index * 0.6 + chaseSpeed * 0.006;
-      const freeAngle = spinDirection * seconds * spinRate + index * 24
-        + Math.sin(seconds * (0.42 + index * 0.025) - index * 0.38) * 6;
+
+      const previous = trailPoints[Math.max(0, index - 1)];
+      const next = trailPoints[Math.min(trailPoints.length - 1, index + 1)];
+      const tangent = Math.atan2(next.y - previous.y, next.x - previous.x);
+      const coherentWave = Math.sin(seconds * 1.6 + index * 0.55) * 10;
+      const freeAngle = tangent * 180 / Math.PI + coherentWave;
+
       const synchronizedTurn = ((synchronizedAngle - freeAngle + 135) % 90) - 45;
       const captureStartAngle = captureFrameAngles[index] ?? freeAngle;
       const captureTurn = ((captureTargetAngle - captureStartAngle + 135) % 90) - 45;
       const angle = phase === "capture" || phase === "destroy"
         ? captureStartAngle + captureTurn * synchronization
         : freeAngle + synchronizedTurn * synchronization;
+      const frame = frames[index];
       frame.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) rotate(${angle.toFixed(2)})`);
       frame.setAttribute("x", (-size / 2).toFixed(2));
       frame.setAttribute("y", (-size / 2).toFixed(2));
