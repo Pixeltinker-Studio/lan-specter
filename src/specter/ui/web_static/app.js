@@ -1623,7 +1623,7 @@ function startScreensaverAnimation() {
   let lastRenderedAt = 0;
   let lastTickAt = startedAt;
   let lockAmount = 0;
-  let phase = "pursuit";
+  let phase = "wander";
   let phaseStartedAt = startedAt;
   let respawnUntil = 0;
   let entityIndex = 0;
@@ -1631,6 +1631,11 @@ function startScreensaverAnimation() {
   let captureFrameAngles = [];
   let captureTargetAngle = 0;
   let frameSizes = frames.map(() => 46);
+  let wanderHeading = Math.random() * Math.PI * 2;
+  let wanderHeadingTarget = wanderHeading;
+  let wanderSpeed = 34;
+  let wanderSpeedTarget = 34;
+  let wanderRepickUntil = 0;
 
   const entityIds = ["07", "12", "19", "31", "42", "58", "73"];
   const waypoints = [
@@ -1711,18 +1716,48 @@ function startScreensaverAnimation() {
     targetState.y = clamp(targetState.y + targetState.vy * deltaSeconds, -160, 760);
 
     const initialChaseDistance = length(targetState.x - chaserState.x, targetState.y - chaserState.y);
-    const predictionSeconds = phase === "pursuit" ? clamp(initialChaseDistance / 420, 0.1, 0.55) : 0;
-    const pursuitX = targetState.x + targetState.vx * predictionSeconds;
-    const pursuitY = targetState.y + targetState.vy * predictionSeconds;
-    const chaseX = pursuitX - chaserState.x;
-    const chaseY = pursuitY - chaserState.y;
-    const pursuitDistance = length(chaseX, chaseY);
-    const desiredChaserSpeed = phase === "pursuit"
-      ? clamp(66 + pursuitDistance * 0.06, 66, 76)
-      : clamp(pursuitDistance * 2.6, 0, 90);
-    const desiredChaserVx = chaseX / Math.max(1, pursuitDistance) * desiredChaserSpeed;
-    const desiredChaserVy = chaseY / Math.max(1, pursuitDistance) * desiredChaserSpeed;
-    const chaserBlend = Math.min(1, (phase === "pursuit" ? 2.4 : 5) * deltaSeconds);
+    let desiredChaserVx;
+    let desiredChaserVy;
+    let chaserBlend;
+    if (phase === "wander") {
+      if (now >= wanderRepickUntil) {
+        wanderRepickUntil = now + 1500 + Math.random() * 2500;
+        wanderHeadingTarget = Math.random() * Math.PI * 2;
+        wanderSpeedTarget = 22 + Math.random() * 34;
+      }
+      const headingDiff = Math.atan2(
+        Math.sin(wanderHeadingTarget - wanderHeading),
+        Math.cos(wanderHeadingTarget - wanderHeading),
+      );
+      wanderHeading += headingDiff * Math.min(1, deltaSeconds * 1.1);
+      wanderSpeed += (wanderSpeedTarget - wanderSpeed) * Math.min(1, deltaSeconds * 1.1);
+
+      const edgeMargin = 150;
+      const edgePush = 46;
+      let edgeVx = 0;
+      let edgeVy = 0;
+      if (chaserState.x < edgeMargin) edgeVx += (edgeMargin - chaserState.x) / edgeMargin * edgePush;
+      if (chaserState.x > 1024 - edgeMargin) edgeVx -= (chaserState.x - (1024 - edgeMargin)) / edgeMargin * edgePush;
+      if (chaserState.y < edgeMargin) edgeVy += (edgeMargin - chaserState.y) / edgeMargin * edgePush;
+      if (chaserState.y > 600 - edgeMargin) edgeVy -= (chaserState.y - (600 - edgeMargin)) / edgeMargin * edgePush;
+
+      desiredChaserVx = Math.cos(wanderHeading) * wanderSpeed + edgeVx;
+      desiredChaserVy = Math.sin(wanderHeading) * wanderSpeed + edgeVy;
+      chaserBlend = Math.min(1, 1.4 * deltaSeconds);
+    } else {
+      const predictionSeconds = phase === "pursuit" ? clamp(initialChaseDistance / 420, 0.1, 0.55) : 0;
+      const pursuitX = targetState.x + targetState.vx * predictionSeconds;
+      const pursuitY = targetState.y + targetState.vy * predictionSeconds;
+      const chaseX = pursuitX - chaserState.x;
+      const chaseY = pursuitY - chaserState.y;
+      const pursuitDistance = length(chaseX, chaseY);
+      const desiredChaserSpeed = phase === "pursuit"
+        ? clamp(66 + pursuitDistance * 0.06, 66, 76)
+        : clamp(pursuitDistance * 2.6, 0, 90);
+      desiredChaserVx = chaseX / Math.max(1, pursuitDistance) * desiredChaserSpeed;
+      desiredChaserVy = chaseY / Math.max(1, pursuitDistance) * desiredChaserSpeed;
+      chaserBlend = Math.min(1, (phase === "pursuit" ? 2.4 : 5) * deltaSeconds);
+    }
     chaserState.vx += (desiredChaserVx - chaserState.vx) * chaserBlend;
     chaserState.vy += (desiredChaserVy - chaserState.vy) * chaserBlend;
     chaserState.x = clamp(chaserState.x + chaserState.vx * deltaSeconds, 58, 966);
@@ -1732,7 +1767,10 @@ function startScreensaverAnimation() {
     const lockTarget = clamp(1 - chaseDistance / 120, 0, 1);
     lockAmount += (lockTarget - lockAmount) * Math.min(1, deltaSeconds * 3.2);
 
-    if (phase === "pursuit" && chaseDistance < 58) {
+    if (phase === "wander" && chaseDistance < 200) {
+      phase = "pursuit";
+      phaseStartedAt = now;
+    } else if (phase === "pursuit" && chaseDistance < 58) {
       phase = "capture";
       phaseStartedAt = now;
       captureFrameAngles = frames.map((frame) => {
@@ -1753,7 +1791,7 @@ function startScreensaverAnimation() {
       targetState.y = spawn.y;
       targetState.vx = spawn.vx;
       targetState.vy = spawn.vy;
-      phase = "pursuit";
+      phase = "wander";
       phaseStartedAt = now;
       respawnUntil = now + 900;
       lockAmount = 0;
@@ -1767,7 +1805,9 @@ function startScreensaverAnimation() {
       ? 1
       : phase === "capture"
         ? captureProgress * captureProgress * (3 - 2 * captureProgress)
-        : lockAmount * 0.28;
+        : phase === "wander"
+          ? 0
+          : lockAmount * 0.28;
     const synchronizedAngle = seconds * 9;
     const frameGeometry = frames.map((frame, index) => {
       const trailPoint = sampleHistory(index * delayStep);
@@ -1822,9 +1862,11 @@ function startScreensaverAnimation() {
       ? "ENTITY DISSIPATION"
       : phase === "capture"
         ? "FIELD LOCK ACQUIRED"
-        : now < respawnUntil
-          ? "NEW ENTITY DETECTED"
-          : "ENTITY ACQUISITION";
+        : phase === "pursuit"
+          ? "ENTITY ACQUISITION"
+          : now < respawnUntil
+            ? "NEW ENTITY DETECTED"
+            : "PASSIVE SWEEP";
     entityIdReadout.textContent = `ENTITY VECTOR / CH-${entityIds[entityIndex]}`;
     vectorReadout.textContent = `VECTOR RATE ${String(Math.round(targetSpeed)).padStart(3, "0")} px/s`;
     screensaverAnimationFrame = requestAnimationFrame(animate);
