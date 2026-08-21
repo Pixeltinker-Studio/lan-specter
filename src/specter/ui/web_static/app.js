@@ -1653,6 +1653,8 @@ function startScreensaverAnimation() {
     x: Math.min(940, chaserState.x + index * 2.3),
     y: Math.min(532, chaserState.y + index * 1.05),
   }));
+  let previousHeading = Math.atan2(chaserState.vy, chaserState.vx);
+  let turnSmooth = 0;
 
   const clamp = (number, minimum, maximum) => Math.max(minimum, Math.min(maximum, number));
   const length = (x, y) => Math.hypot(x, y);
@@ -1728,8 +1730,8 @@ function startScreensaverAnimation() {
         wanderWaypointY = 120 + Math.random() * (600 - 240);
       }
       const baseHeading = Math.atan2(toWaypointY, toWaypointX);
-      swayPhase += deltaSeconds * 0.35;
-      const swayAmount = Math.sin(seconds * 1.3 + swayPhase * 3.1) * 0.95;
+      swayPhase += deltaSeconds * 0.22;
+      const swayAmount = Math.sin(seconds * 0.55 + swayPhase * 1.6) * 1.05;
       const heading = baseHeading + swayAmount;
       const travelSpeed = 40 + Math.sin(seconds * 0.6 + swayPhase * 1.7) * 10;
       const baseVx = Math.cos(heading) * travelSpeed;
@@ -1765,6 +1767,14 @@ function startScreensaverAnimation() {
     chaserState.vy += (desiredChaserVy - chaserState.vy) * chaserBlend;
     chaserState.x = clamp(chaserState.x + chaserState.vx * deltaSeconds, 58, 966);
     chaserState.y = clamp(chaserState.y + chaserState.vy * deltaSeconds, 54, 546);
+
+    const currentHeading = Math.atan2(chaserState.vy, chaserState.vx);
+    const turnDelta = Math.atan2(
+      Math.sin(currentHeading - previousHeading),
+      Math.cos(currentHeading - previousHeading),
+    );
+    previousHeading = currentHeading;
+    turnSmooth += (Math.abs(turnDelta) - turnSmooth) * Math.min(1, deltaSeconds * 2.6);
 
     const chaseDistance = length(targetState.x - chaserState.x, targetState.y - chaserState.y);
     const lockTarget = clamp(1 - chaseDistance / 120, 0, 1);
@@ -1803,8 +1813,17 @@ function startScreensaverAnimation() {
 
     history.unshift({ x: chaserState.x, y: chaserState.y });
     if (history.length > 96) history.pop();
-    const wanderLengthen = phase === "wander" ? 1.6 : 1;
-    const delayStep = (0.38 + (1 - lockAmount) * 3.45) * wanderLengthen;
+    const turnFactor = clamp(turnSmooth / 0.55, 0, 1);
+    let delayMultiplier = 1;
+    if (phase === "wander") {
+      delayMultiplier = 2.6;
+    } else if (phase === "capture") {
+      delayMultiplier = 1 - captureProgress * 0.88;
+    } else if (phase === "destroy") {
+      delayMultiplier = 0.12;
+    }
+    delayMultiplier *= 1 - turnFactor * 0.5;
+    const delayStep = (0.38 + (1 - lockAmount) * 3.45) * delayMultiplier;
     const synchronization = phase === "destroy"
       ? 1
       : phase === "capture"
