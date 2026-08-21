@@ -1630,6 +1630,7 @@ function startScreensaverAnimation() {
   let waypointIndex = 0;
   let captureFrameAngles = [];
   let captureTargetAngle = 0;
+  let frameSizes = frames.map(() => 46);
 
   const entityIds = ["07", "12", "19", "31", "42", "58", "73"];
   const waypoints = [
@@ -1661,6 +1662,16 @@ function startScreensaverAnimation() {
     };
   };
 
+  const offScreenSpawn = (entry) => {
+    const side = Math.floor(Math.random() * 4);
+    const speed = 72;
+    const drift = () => (Math.random() - 0.5) * 40;
+    if (side === 0) return { x: -140, y: clamp(entry.y, 60, 540), vx: speed, vy: drift() };
+    if (side === 1) return { x: 1164, y: clamp(entry.y, 60, 540), vx: -speed, vy: drift() };
+    if (side === 2) return { x: clamp(entry.x, 60, 964), y: -140, vx: drift(), vy: speed };
+    return { x: clamp(entry.x, 60, 964), y: 740, vx: drift(), vy: -speed };
+  };
+
   const animate = (now) => {
     if (!uiState.screensaverActive || uiState.activeView !== "screensaver" || !svg.isConnected) {
       screensaverAnimationFrame = null;
@@ -1689,15 +1700,15 @@ function startScreensaverAnimation() {
       targetToWaypointDistance = length(targetToWaypointX, targetToWaypointY);
     }
 
-    const desiredTargetSpeed = phase === "capture" ? 72 * (1 - captureProgress) : phase === "destroy" ? 0 : 72;
+    const desiredTargetSpeed = phase === "capture" ? 60 * (1 - captureProgress) : phase === "destroy" ? 0 : 60;
     const targetSteering = phase === "capture" ? 4.8 : phase === "destroy" ? 8 : 1.8;
     const desiredTargetVx = targetToWaypointX / Math.max(1, targetToWaypointDistance) * desiredTargetSpeed;
     const desiredTargetVy = targetToWaypointY / Math.max(1, targetToWaypointDistance) * desiredTargetSpeed;
     const targetBlend = Math.min(1, targetSteering * deltaSeconds);
     targetState.vx += (desiredTargetVx - targetState.vx) * targetBlend;
     targetState.vy += (desiredTargetVy - targetState.vy) * targetBlend;
-    targetState.x = clamp(targetState.x + targetState.vx * deltaSeconds, 72, 952);
-    targetState.y = clamp(targetState.y + targetState.vy * deltaSeconds, 68, 532);
+    targetState.x = clamp(targetState.x + targetState.vx * deltaSeconds, -160, 1184);
+    targetState.y = clamp(targetState.y + targetState.vy * deltaSeconds, -160, 760);
 
     const initialChaseDistance = length(targetState.x - chaserState.x, targetState.y - chaserState.y);
     const predictionSeconds = phase === "pursuit" ? clamp(initialChaseDistance / 420, 0.1, 0.55) : 0;
@@ -1707,8 +1718,8 @@ function startScreensaverAnimation() {
     const chaseY = pursuitY - chaserState.y;
     const pursuitDistance = length(chaseX, chaseY);
     const desiredChaserSpeed = phase === "pursuit"
-      ? clamp(92 + pursuitDistance * 0.2, 92, 178)
-      : clamp(pursuitDistance * 3.2, 0, 190);
+      ? clamp(66 + pursuitDistance * 0.06, 66, 76)
+      : clamp(pursuitDistance * 2.6, 0, 90);
     const desiredChaserVx = chaseX / Math.max(1, pursuitDistance) * desiredChaserSpeed;
     const desiredChaserVy = chaseY / Math.max(1, pursuitDistance) * desiredChaserSpeed;
     const chaserBlend = Math.min(1, (phase === "pursuit" ? 2.4 : 5) * deltaSeconds);
@@ -1736,20 +1747,15 @@ function startScreensaverAnimation() {
       targetState.vy = 0;
     } else if (phase === "destroy" && phaseSeconds >= 0.62) {
       entityIndex = (entityIndex + 1) % entityIds.length;
-      waypointIndex = waypoints.reduce((bestIndex, point, index) => {
-        const best = waypoints[bestIndex];
-        return length(point.x - chaserState.x, point.y - chaserState.y)
-          > length(best.x - chaserState.x, best.y - chaserState.y) ? index : bestIndex;
-      }, 0);
-      const spawnPoint = waypoints[waypointIndex];
-      targetState.x = spawnPoint.x;
-      targetState.y = spawnPoint.y;
-      waypointIndex = (waypointIndex + 1) % waypoints.length;
-      targetState.vx = 18;
-      targetState.vy = -12;
+      waypointIndex = Math.floor(Math.random() * waypoints.length);
+      const spawn = offScreenSpawn(waypoints[waypointIndex]);
+      targetState.x = spawn.x;
+      targetState.y = spawn.y;
+      targetState.vx = spawn.vx;
+      targetState.vy = spawn.vy;
       phase = "pursuit";
       phaseStartedAt = now;
-      respawnUntil = now + 560;
+      respawnUntil = now + 900;
       lockAmount = 0;
       captureFrameAngles = [];
     }
@@ -1762,20 +1768,21 @@ function startScreensaverAnimation() {
       : phase === "capture"
         ? captureProgress * captureProgress * (3 - 2 * captureProgress)
         : lockAmount * 0.28;
-    const synchronizedAngle = seconds * 18;
+    const synchronizedAngle = seconds * 9;
     const frameGeometry = frames.map((frame, index) => {
       const trailPoint = sampleHistory(index * delayStep);
       const point = {
         x: trailPoint.x + (targetState.x - trailPoint.x) * synchronization,
         y: trailPoint.y + (targetState.y - trailPoint.y) * synchronization,
       };
-      const distanceToTarget = length(targetState.x - point.x, targetState.y - point.y);
-      const freeSize = clamp(38 + distanceToTarget * 0.3, 38, 172);
-      const size = freeSize + (46 - freeSize) * synchronization;
+      const chaseSpeed = length(chaserState.vx, chaserState.vy);
+      const sizeTarget = clamp(44 + chaseSpeed * 0.55, 44, 176);
+      frameSizes[index] += (sizeTarget - frameSizes[index]) * Math.min(1, deltaSeconds * 2.6);
+      const size = frameSizes[index];
       const spinDirection = index % 3 === 0 ? -1 : 1;
-      const spinRate = 7 + index * 2.1 + distanceToTarget * 0.014 + length(targetState.vx, targetState.vy) * 0.018;
+      const spinRate = 2.2 + index * 0.6 + chaseSpeed * 0.006;
       const freeAngle = spinDirection * seconds * spinRate + index * 24
-        + Math.sin(seconds * (0.42 + index * 0.025) - index * 0.38) * 10;
+        + Math.sin(seconds * (0.42 + index * 0.025) - index * 0.38) * 6;
       const synchronizedTurn = ((synchronizedAngle - freeAngle + 135) % 90) - 45;
       const captureStartAngle = captureFrameAngles[index] ?? freeAngle;
       const captureTurn = ((captureTargetAngle - captureStartAngle + 135) % 90) - 45;
