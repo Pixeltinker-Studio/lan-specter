@@ -1655,6 +1655,8 @@ function startScreensaverAnimation() {
   }));
   let previousHeading = Math.atan2(chaserState.vy, chaserState.vx);
   let turnSmooth = 0;
+  let delayMultiplierSmoothed = 1;
+  let sizeScaleSmoothed = 1;
 
   const clamp = (number, minimum, maximum) => Math.max(minimum, Math.min(maximum, number));
   const length = (x, y) => Math.hypot(x, y);
@@ -1814,16 +1816,17 @@ function startScreensaverAnimation() {
     history.unshift({ x: chaserState.x, y: chaserState.y });
     if (history.length > 96) history.pop();
     const turnFactor = clamp(turnSmooth / 0.55, 0, 1);
-    let delayMultiplier = 1;
+    let delayMultiplierTarget = 1;
     if (phase === "wander") {
-      delayMultiplier = 2.6;
+      delayMultiplierTarget = 4;
     } else if (phase === "capture") {
-      delayMultiplier = 1 - captureProgress * 0.88;
+      delayMultiplierTarget = 1 - captureProgress * 0.88;
     } else if (phase === "destroy") {
-      delayMultiplier = 0.12;
+      delayMultiplierTarget = 0.12;
     }
-    delayMultiplier *= 1 - turnFactor * 0.5;
-    const delayStep = (0.38 + (1 - lockAmount) * 3.45) * delayMultiplier;
+    delayMultiplierTarget *= 1 - turnFactor * 0.5;
+    delayMultiplierSmoothed += (delayMultiplierTarget - delayMultiplierSmoothed) * Math.min(1, deltaSeconds * 3);
+    const delayStep = (0.38 + (1 - lockAmount) * 3.45) * delayMultiplierSmoothed;
     const synchronization = phase === "destroy"
       ? 1
       : phase === "capture"
@@ -1844,7 +1847,11 @@ function startScreensaverAnimation() {
       const taper = index / Math.max(1, frames.length - 1);
       const sizeTarget = clamp(44 + chaseSpeed * 0.55 + taper * 60, 40, 210);
       frameSizes[index] += (sizeTarget - frameSizes[index]) * Math.min(1, deltaSeconds * 2.2);
-      const size = frameSizes[index];
+      let sizeScaleTarget = 1;
+      if (phase === "capture") sizeScaleTarget = 1 - captureProgress * 0.92;
+      else if (phase === "destroy") sizeScaleTarget = 0.08;
+      sizeScaleSmoothed += (sizeScaleTarget - sizeScaleSmoothed) * Math.min(1, deltaSeconds * 4);
+      const size = frameSizes[index] * sizeScaleSmoothed;
 
       const previous = trailPoints[Math.max(0, index - 1)];
       const next = trailPoints[Math.min(trailPoints.length - 1, index + 1)];
